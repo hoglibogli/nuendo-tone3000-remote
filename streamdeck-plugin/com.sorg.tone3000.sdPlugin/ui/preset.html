@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+	<head lang="de">
+		<meta charset="utf-8" />
+		<title>Tone3000 — Preset</title>
+		<script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+	</head>
+	<body>
+		<sdpi-item label="Preset">
+			<sdpi-select
+				setting="preset"
+				datasource="getPresets"
+				placeholder="Preset wählen"
+				loading="Lese Presets…"
+			></sdpi-select>
+		</sdpi-item>
+
+		<sdpi-item>
+			<sdpi-button onclick="location.reload()">Liste neu einlesen</sdpi-button>
+		</sdpi-item>
+
+		<p style="opacity: 0.7; font-size: 11px; padding: 4px 8px">
+			Die Liste kommt aus den Preset-Ordnern von TONE3000: zuerst die eigenen (alphabetisch), dann die
+			Werkspresets. Ein neu gespeichertes Preset erscheint nach <b>Liste neu einlesen</b>.
+		</p>
+
+		<p style="opacity: 0.7; font-size: 11px; padding: 4px 8px">
+			Ein Druck wählt das Preset in TONE3000 per Namen. Der <b>helle Goldrahmen</b> kommt erst, wenn Nuendo
+			das Preset als aktiv meldet. Bleibt er aus, war das Preset schon aktiv — auf einer frisch eingesetzten
+			Instanz gilt das erste Preset der Liste als aktiv, obwohl es nicht geladen ist; dann einmal ein anderes
+			wählen.
+		</p>
+	</body>
+</html>

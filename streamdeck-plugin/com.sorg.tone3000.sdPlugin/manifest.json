@@ -1,0 +1,114 @@
+{
+	"$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+	"Name": "Tone3000",
+	"Version": "0.1.0.0",
+	"Author": "Vincent Sorg",
+	"Description": "Steuert TONE3000 auf Input 6 in Nuendo: Gain und EQ auf den Drehreglern des Stream Deck + XL, Presets, Tuner und Delay auf Tasten.",
+	"Actions": [
+		{
+			"Name": "Regler",
+			"UUID": "com.sorg.tone3000.knob",
+			"Icon": "imgs/actions/knob/icon",
+			"Tooltip": "Gain, Bass, Mid oder Treble von TONE3000. Ohne Auswahl bestimmt die Spalte des Reglers den Parameter.",
+			"Controllers": [
+				"Encoder"
+			],
+			"Encoder": {
+				"Icon": "imgs/actions/knob/encoder",
+				"layout": "layouts/knob.json",
+				"TriggerDescription": {
+					"Rotate": "Wert",
+					"Push": "Mitte (5)"
+				}
+			},
+			"PropertyInspectorPath": "ui/knob.html",
+			"States": [
+				{
+					"Image": "imgs/actions/knob/key",
+					"ShowTitle": false
+				}
+			]
+		},
+		{
+			"Name": "Preset",
+			"UUID": "com.sorg.tone3000.preset",
+			"Icon": "imgs/actions/preset/icon",
+			"Tooltip": "Wählt ein TONE3000-Preset per Namen; der Rahmen zeigt das aktive.",
+			"Controllers": [
+				"Keypad"
+			],
+			"PropertyInspectorPath": "ui/preset.html",
+			"States": [
+				{
+					"Image": "imgs/actions/preset/key",
+					"ShowTitle": false
+				}
+			]
+		},
+		{
+			"Name": "TONE3000-Fenster",
+			"UUID": "com.sorg.tone3000.amp",
+			"Icon": "imgs/actions/amp/icon",
+			"Tooltip": "Öffnet oder schließt das Fenster von TONE3000 (Slot 3).",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/amp/key",
+					"ShowTitle": false
+				}
+			]
+		},
+		{
+			"Name": "Tuner",
+			"UUID": "com.sorg.tone3000.tuner",
+			"Icon": "imgs/actions/tuner/icon",
+			"Tooltip": "Tuner-Modus an/aus: Die Touch-Leiste zeigt die Stimmanzeige des Steinberg-Tuners in Slot 1, sein Ausgang ist stumm, die Regler ruhen. Optional öffnet sich das Tuner-Fenster am Rechner.",
+			"Controllers": [
+				"Keypad"
+			],
+			"PropertyInspectorPath": "ui/tuner.html",
+			"States": [
+				{
+					"Image": "imgs/actions/tuner/key",
+					"ShowTitle": false
+				}
+			]
+		},
+		{
+			"Name": "Delay",
+			"UUID": "com.sorg.tone3000.delay",
+			"Icon": "imgs/actions/delay/icon",
+			"Tooltip": "Delay (Slot 2) einschalten und sein Fenster öffnen; nochmals: Bypass an, Fenster zu.",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/delay/key",
+					"ShowTitle": false
+				}
+			]
+		}
+	],
+	"Category": "Tone3000",
+	"CategoryIcon": "imgs/plugin/category-icon",
+	"Icon": "imgs/plugin/marketplace",
+	"SDKVersion": 2,
+	"Software": {
+		"MinimumVersion": "6.5"
+	},
+	"OS": [
+		{
+			"Platform": "windows",
+			"MinimumVersion": "10"
+		}
+	],
+	"Nodejs": {
+		"Version": "20",
+		"Debug": "enabled"
+	},
+	"CodePath": "bin/plugin.js",
+	"UUID": "com.sorg.tone3000"
+}

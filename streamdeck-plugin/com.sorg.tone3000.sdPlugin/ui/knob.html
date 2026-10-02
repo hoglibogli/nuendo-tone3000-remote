@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+	<head lang="de">
+		<meta charset="utf-8" />
+		<title>Tone3000 — Regler</title>
+		<script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+	</head>
+	<body>
+		<sdpi-item label="Parameter">
+			<sdpi-select setting="param" default="">
+				<option value="">Nach Spalte</option>
+				<option value="gain">Gain</option>
+				<option value="bass">Bass</option>
+				<option value="mid">Mid</option>
+				<option value="treble">Treble</option>
+			</sdpi-select>
+		</sdpi-item>
+
+		<p style="opacity: 0.7; font-size: 11px; padding: 4px 8px">
+			<b>Nach Spalte</b> heißt: Der erste Regler von links steuert Gain, der zweite Bass, der dritte Mid,
+			der vierte Treble. Regler weiter rechts nehmen Gain, bis hier etwas anderes gewählt ist.
+		</p>
+
+		<p style="opacity: 0.7; font-size: 11px; padding: 4px 8px">
+			Drehen ändert den Wert in Schritten von 0,2 (schnell gedreht 0,4), ein Druck setzt die Mitte (5,0). Gesteuert wird TONE3000
+			in Insert-Slot 3 von <b>Mono In 6</b>. Steht im Feld <b>Kanal?</b>, heißt Platz 6 in Nuendo anders;
+			<b>Plugin?</b> heißt, in Slot 3 steckt kein TONE3000; <b>Warte…</b> heißt, Nuendo antwortet nicht.
+		</p>
+
+		<p style="opacity: 0.7; font-size: 11px; padding: 4px 8px">
+			Im <b>Tuner-Modus</b> (Tuner-Taste) zeigen die vier linken Regler zusammen die Stimmanzeige; Drehen und
+			Drücken ruhen, bis der Modus wieder aus ist.
+		</p>
+
+		<p style="opacity: 0.7; font-size: 11px; padding: 4px 8px">
+			MIDI: Ausgang <b>sd_tone3000</b>, Eingang <b>tone3000_sd</b> (Loopback der Windows MIDI Services). Die
+			Ports sind fest eingestellt; fehlt einer, sucht das Plugin weiter, bis er da ist.
+		</p>
+	</body>
+</html>

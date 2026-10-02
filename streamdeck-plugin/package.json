@@ -1,0 +1,25 @@
+{
+	"name": "tone3000-streamdeck",
+	"version": "0.1.0",
+	"description": "Stream Deck + XL plugin: TONE3000 in Nuendo (Input 6) im Marshall-Stil steuern.",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"build": "rollup -c",
+		"postinstall": "npm --prefix ./com.sorg.tone3000.sdPlugin install && node scripts/audify-napi9.cjs",
+		"test": "node test/run.cjs",
+		"fix:audify": "node scripts/audify-napi9.cjs"
+	},
+	"dependencies": {
+		"@elgato/streamdeck": "^1.3.0"
+	},
+	"devDependencies": {
+		"@rollup/plugin-commonjs": "^28.0.0",
+		"@rollup/plugin-node-resolve": "^15.3.0",
+		"@rollup/plugin-typescript": "^12.1.0",
+		"@types/node": "^20.16.0",
+		"rollup": "^4.24.0",
+		"tslib": "^2.7.0",
+		"typescript": "^5.6.0"
+	}
+}

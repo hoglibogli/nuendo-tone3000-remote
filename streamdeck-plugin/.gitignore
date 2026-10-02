@@ -1,0 +1,5 @@
+node_modules/
+com.sorg.tone3000.sdPlugin/node_modules/
+com.sorg.tone3000.sdPlugin/bin/
+*.log
+test-output/

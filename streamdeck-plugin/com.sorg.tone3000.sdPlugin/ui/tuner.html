@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+	<head lang="de">
+		<meta charset="utf-8" />
+		<title>Tone3000 — Tuner</title>
+		<script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+	</head>
+	<body>
+		<sdpi-item label="Quelle">
+			<sdpi-select setting="source" default="own">
+				<option value="own">Eigener Tuner</option>
+				<option value="steinberg">Steinberg-Tuner in Slot 1</option>
+			</sdpi-select>
+		</sdpi-item>
+
+		<sdpi-item label="Eingang">
+			<sdpi-select
+				setting="input"
+				datasource="getInputs"
+				placeholder="MADI 6 (Vorgabe)"
+				loading="Suche Eingänge…"
+			></sdpi-select>
+		</sdpi-item>
+
+		<sdpi-item label="Stumm">
+			<sdpi-checkbox setting="muteChannel" default="true" label="Input 6 beim Stimmen stummschalten"></sdpi-checkbox>
+		</sdpi-item>
+
+		<sdpi-item label="Kammerton">
+			<sdpi-textfield setting="a4" default="440" placeholder="440" pattern="^4[0-8][0-9]([.,][0-9])?$"></sdpi-textfield>
+		</sdpi-item>
+
+		<sdpi-item label="Fenster">
+			<sdpi-checkbox setting="openWindow" label="Tuner-Fenster am Rechner öffnen (nur Steinberg-Tuner)"></sdpi-checkbox>
+		</sdpi-item>
+
+		<sdpi-item>
+			<sdpi-button onclick="location.reload()">Eingänge neu suchen</sdpi-button>
+		</sdpi-item>
+
+		<p style="opacity: 0.7; font-size: 11px; padding: 4px 8px">
+			Ein Druck schaltet den <b>Tuner-Modus</b> ein oder aus. Im Modus zeigt die Touch-Leiste über den vier
+			linken Reglern die Stimmanzeige (Note, Nadel, Cent), die Regler ruhen. Ein zweiter Druck beendet ihn.
+		</p>
+
+		<p style="opacity: 0.7; font-size: 11px; padding: 4px 8px">
+			<b>Eigener Tuner</b> (Vorgabe): Das Plugin misst den gewählten <b>Eingang</b> direkt (ein Kanal, Vorgabe
+			MADI 6) und hält ausklingende Saiten lange — auch Bass und Bariton, chromatisch. Noten heißen englisch
+			(B, F#). Mit <b>Input 6 beim Stimmen stummschalten</b> schaltet die Taste Input 6 in Nuendo stumm, solange
+			gestimmt wird; beim Ausschalten wird Input 6 immer wieder offen geschaltet, auch wenn er schon vorher
+			stumm war (etwa nach dem Speichern mit laufendem Tuner). Der
+			<b>Kammerton</b> gilt für die Anzeige (Vorgabe 440 Hz). Gedimmt heißt: Die Saite ist verklungen oder
+			abgedämpft, gezeigt wird der letzte sichere Wert.
+		</p>
+
+		<p style="opacity: 0.7; font-size: 11px; padding: 4px 8px">
+			<b>Eingang?</b> bzw. „Eingang MADI 6 fehlt" heißt: Das Gerät ist aus oder das Kanalpaar ist in den
+			RME-Einstellungen nicht als WDM-Gerät freigegeben. Das Plugin versucht es alle paar Sekunden erneut.
+		</p>
+
+		<p style="opacity: 0.7; font-size: 11px; padding: 4px 8px">
+			<b>Steinberg-Tuner in Slot 1</b>: der bisherige Weg. Im Modus ist dann der Ausgang des Steinberg-Tuners
+			in Insert-Slot 1 von <b>Mono In 6</b> stumm. Mit <b>Tuner-Fenster am Rechner öffnen</b> geht dazu sein
+			Fenster in Nuendo auf und beim Ausschalten wieder zu. <b>Tuner?</b> bzw. „Steinberg-Tuner in Slot 1
+			fehlt" heißt: In Slot 1 steckt nicht der Tuner aus Nuendos Plug-in-Set. <b>Kanal?</b> heißt, Platz 6
+			heißt in Nuendo anders; <b>Warte…</b> heißt, Nuendo antwortet nicht. <b>stumm</b> heißt: Der Modus ist
+			aus, der Ausgang des Steinberg-Tuners aber noch stumm; das Deck hebt das einmal von sich aus auf.
+		</p>
+	</body>
+</html>

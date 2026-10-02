@@ -1,0 +1,129 @@
+--- Suchlauf TONE3000 Remote ---
+Eingang 0: "Stereo In 1-2" mute=0
+Eingang 1: "Mono In 1" mute=0
+Eingang 2: "Mono In 2" mute=0
+Eingang 3: "Mono In 3" mute=0
+Eingang 4: "Mono In 4" mute=0
+Eingang 5: "Mono In 5" mute=0
+Eingang 6: "Mono In 6" mute=1
+Eingang 7: "Mono In 7" mute=0
+Eingang 8: "Mono In 8" mute=0
+Eingang 9: "Mono In 9" mute=0
+Eingang 10: "Mono In 10" mute=0
+Eingang 11: "Mono In 11" mute=0
+Eingang 12: "Mono In 12" mute=0
+Eingang 13: "Mono In 13" mute=0
+Eingang 14: "Mono In 14" mute=0
+Eingang 15: "Mono In 15" mute=0
+Eingang 16: "Mono In 16" mute=0
+Eingang 17: "Mono In 17" mute=0
+Eingang 18: "Mono In 18" mute=0
+Eingang 19: "Mono In 19" mute=0
+Eingang 20: "Mono In 20" mute=0
+Eingang 21: "Mono In 21" mute=0
+Eingang 22: "Mono In 22" mute=0
+Eingang 23: "Mono In 23" mute=0
+Eingang 24: "Mono In 24" mute=0
+Eingang 25: "Mono In 25" mute=0
+Eingang 26: "Mono In 26" mute=0
+Eingang 27: "Mono In 27" mute=0
+Eingang 28: "Mono In 28" mute=0
+Eingang 29: "Mono In 29" mute=0
+Eingang 30: "Mono In 30" mute=0
+Eingang 31: "Mono In 31" mute=0
+32 von 32 Plätzen belegt
+Ziel: Platz 5 "Mono In 5" (RÜCKFALL: "Input 6" nicht gefunden)
+DA Basis id=1881 typ=InputChannel titel="Mono In 5" mixerIndex=-1 zone=0 sichtbar=true
+== Kanal id=1881 params=40
+   4013:Write Automation=Off | 4014:Read Automation=Off | 1024:Name=Mono In 5
+   4040:Edit Setting=Off | 4096:Edit Inserts=Off | 4000:Selected=Off | 4047:Remoted=On
+   1025:Volume=0.00 | 1027:Mute=Off
+   4055:Channel Configuration (click to switch between mono and stereo)=Off | 1028:Solo=Off
+   1033:Solo Defeat=Off | 4101:Input=No Bus | 4102:Output=No Bus | 4039:Pre Fader Listen=Off
+   4105:Automation Meter=0 | 4011:Clip=Off | 4012:Peak=-oo | 4103:Meter Select=1
+   4104:Meter Range=0 | 4009:Meter All=-oo | 4010:Meter Max.=-oo | 4019:Meter=Off
+   4114:Meter Count=1 | 4003:Streams=1 | 4002:Record Enable=Off | 4048:Monitor Mode=0
+   4001:Monitor=Off | 4106:ioChanged=Off | 4109:Linked Panner=On | 4113:freeze=Off
+   4111:listen=Off | 4112:listenPos=On | 4115:reset=Off | 4116:click=Off | 4117:clickVolume=0.0
+   4118:clickPan=C | 4119:On=On | 4120:channelStripsPreInserts=Off
+   4121:postInsertsPreFader=Off
+--- Unterobjekte des Kanals: 7 ---
+   0 typ=Quick Controls titel="Quick Controls" name="Quick Controls" params=0 kinder=0
+   1 typ=InputFilter titel="Input Filter" name="InputFilter" params=11 kinder=0
+   2 typ=Panner titel="Standard Panner" name="Panner" params=5 kinder=0
+   3 typ=Inserts titel="Inserts" name="Inserts" params=6 kinder=16
+   4 typ=Strips titel="Strip" name="Strips" params=6 kinder=6
+   5 typ=Outputs titel="Outputs" name="Outputs" params=6 kinder=2
+   6 typ=cvDevice titel="cvDevice" name="cvDevice" params=0 kinder=1
+--- Inserts id=1883, 16 Slots ---
+== Inserts id=1883 params=6
+   4096:Bypass=Off | 4097:Active=Off | 4099:Reset Section=Off
+   4100:Reset Section with Warning=Off | 4622:Info=Off | 4101:Summing Mode=On
+-- Slot 1 id=1884 typ=Slot titel="1" kinder=0 (leer)
+== Slot 1 id=1884 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 2 id=1885 typ=Slot titel="2" kinder=0 (leer)
+== Slot 2 id=1885 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 3 id=1886 typ=Slot titel="3" kinder=0 (leer)
+== Slot 3 id=1886 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 4 id=1887 typ=Slot titel="4" kinder=0 (leer)
+== Slot 4 id=1887 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 5 id=1888 typ=Slot titel="5" kinder=0 (leer)
+== Slot 5 id=1888 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 6 id=1889 typ=Slot titel="6" kinder=0 (leer)
+== Slot 6 id=1889 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 7 id=1890 typ=Slot titel="7" kinder=0 (leer)
+== Slot 7 id=1890 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 8 id=1891 typ=Slot titel="8" kinder=0 (leer)
+== Slot 8 id=1891 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 9 id=1892 typ=Slot titel="9" kinder=0 (leer)
+== Slot 9 id=1892 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 10 id=1893 typ=Slot titel="10" kinder=0 (leer)
+== Slot 10 id=1893 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 11 id=1894 typ=Slot titel="11" kinder=0 (leer)
+== Slot 11 id=1894 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 12 id=1895 typ=Slot titel="12" kinder=0 (leer)
+== Slot 12 id=1895 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 13 id=1896 typ=Slot titel="13" kinder=0 (leer)
+== Slot 13 id=1896 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 14 id=1897 typ=Slot titel="14" kinder=0 (leer)
+== Slot 14 id=1897 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 15 id=1898 typ=Slot titel="15" kinder=0 (leer)
+== Slot 15 id=1898 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 16 id=1899 typ=Slot titel="16" kinder=0 (leer)
+== Slot 16 id=1899 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+--- Fundliste (0) ---
+--- Suchlauf beendet ---
+(Stopp-Datei gefunden)
+ACHTUNG: Ende der Beobachtung nicht bestätigt.

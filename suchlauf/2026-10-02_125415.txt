@@ -1,0 +1,420 @@
+--- Suchlauf TONE3000 Remote, Protokoll 3, Ziel "Mono In 6" ---
+Eingang 0: "Stereo In 1-2" mute=0
+Eingang 1: "Mono In 1" mute=0
+Eingang 2: "Mono In 2" mute=0
+Eingang 3: "Mono In 3" mute=0
+Eingang 4: "Mono In 4" mute=0
+Eingang 5: "Mono In 5" mute=0
+Eingang 6: "Mono In 6" mute=1
+Eingang 7: "Mono In 7" mute=0
+Eingang 8: "Mono In 8" mute=0
+Eingang 9: "Mono In 9" mute=0
+Eingang 10: "Mono In 10" mute=0
+Eingang 11: "Mono In 11" mute=0
+Eingang 12: "Mono In 12" mute=0
+Eingang 13: "Mono In 13" mute=0
+Eingang 14: "Mono In 14" mute=0
+Eingang 15: "Mono In 15" mute=0
+Eingang 16: "Mono In 16" mute=0
+Eingang 17: "Mono In 17" mute=0
+Eingang 18: "Mono In 18" mute=0
+Eingang 19: "Mono In 19" mute=0
+Eingang 20: "Mono In 20" mute=0
+Eingang 21: "Mono In 21" mute=0
+Eingang 22: "Mono In 22" mute=0
+Eingang 23: "Mono In 23" mute=0
+Eingang 24: "Mono In 24" mute=0
+Eingang 25: "Mono In 25" mute=0
+Eingang 26: "Mono In 26" mute=0
+Eingang 27: "Mono In 27" mute=0
+Eingang 28: "Mono In 28" mute=0
+Eingang 29: "Mono In 29" mute=0
+Eingang 30: "Mono In 30" mute=0
+Eingang 31: "Mono In 31" mute=0
+32 von 32 Plätzen belegt
+Ziel: Platz 6 "Mono In 6" (per Name)
+DA Basis id=1917 typ=InputChannel titel="Mono In 6" mixerIndex=-1 zone=0 sichtbar=true
+== Kanal id=1917 params=40
+   4013:Write Automation=Off | 4014:Read Automation=Off | 1024:Name=Mono In 6
+   4040:Edit Setting=Off | 4096:Edit Inserts=Off | 4000:Selected=Off | 4047:Remoted=On
+   1025:Volume=0.00 | 1027:Mute=On
+   4055:Channel Configuration (click to switch between mono and stereo)=Off | 1028:Solo=Off
+   1033:Solo Defeat=Off | 4101:Input=No Bus | 4102:Output=No Bus | 4039:Pre Fader Listen=Off
+   4105:Automation Meter=0 | 4011:Clip=Off | 4012:Peak=-oo | 4103:Meter Select=1
+   4104:Meter Range=0 | 4009:Meter All=-oo | 4010:Meter Max.=-oo | 4019:Meter=Off
+   4114:Meter Count=1 | 4003:Streams=1 | 4002:Record Enable=Off | 4048:Monitor Mode=0
+   4001:Monitor=Off | 4106:ioChanged=Off | 4109:Linked Panner=On | 4113:freeze=Off
+   4111:listen=Off | 4112:listenPos=On | 4115:reset=Off | 4116:click=Off | 4117:clickVolume=0.0
+   4118:clickPan=C | 4119:On=On | 4120:channelStripsPreInserts=Off
+   4121:postInsertsPreFader=Off
+--- Unterobjekte des Kanals: 7 ---
+   0 typ=Quick Controls titel="Quick Controls" name="Quick Controls" params=0 kinder=0
+   1 typ=InputFilter titel="Input Filter" name="InputFilter" params=11 kinder=0
+   2 typ=Panner titel="Standard Panner" name="Panner" params=5 kinder=0
+   3 typ=Inserts titel="Inserts" name="Inserts" params=6 kinder=16
+   4 typ=Strips titel="Strip" name="Strips" params=6 kinder=6
+   5 typ=Outputs titel="Outputs" name="Outputs" params=6 kinder=2
+   6 typ=cvDevice titel="cvDevice" name="cvDevice" params=0 kinder=1
+--- Inserts id=1919, 16 Slots ---
+== Inserts id=1919 params=6
+   4096:Bypass=Off | 4097:Active=On | 4099:Reset Section=Off
+   4100:Reset Section with Warning=Off | 4622:Info=Off | 4101:Summing Mode=On
+-- Slot 1 id=1920 typ=Slot titel="1" kinder=1 plugin="Tuner"
+   klasse="6B9B08D2CA294270BF092A62865521BF-0" uid="73CF16DBAC8A35145DA98FDB26A39875" typ=
+== Slot 1 id=1920 params=8
+   4098:On=On | 4101:Edit=On | 4102:Bypass=Off | 4125:Effect Type=Tuner
+   4126:Resize Channel=Off | 4103:Input MIDI Signal=Off | 4104:Temporary Disabled=Off
+   4127:Open Patcher=Off
+== Slot 1 "Tuner" id=1922 params=12
+   0 tag=4201 "Mute" = "Off"  | roh 0 vorg 0 | plain 0..1 | discrete auto
+   1 tag=4207 "Bypass" = "Off" On/Off | roh 0 vorg 0 | plain 0..1 | discrete auto
+   2 tag=4211 "Base" = "440.0" Hz | roh 0.5 vorg 0.5 | plain 425..455 | discrete auto
+   3 tag=4202 "Frequency" = "0.0" Hz | roh 0 vorg 0 | plain 0..4000 | continuous
+   4 tag=4203 "Note" = "--"  | roh 0 vorg 0 | plain 0..89 | discrete
+   5 tag=4204 "Cent" = "-49"  | roh 0.01 vorg 0.5 | plain -50..50 | continuous
+   6 tag=4205 "Oct" = ""  | roh 0 vorg 0.5 | plain -50..50 | continuous
+   7 tag=4208 "Reset" = "Off"  | roh 0 vorg 0 | plain 0..1 | discrete
+   8 tag=4209 "Locked" = "Off" On/Off | roh 0 vorg 0 | plain 0..1 | discrete
+   9 tag=4210 "In Tune" = "Off" On/Off | roh 0 vorg 0 | plain 0..1 | discrete
+   10 tag=4212 "AnaDig" = "Off" On/Off | roh 0 vorg 0 | plain 0..1 | discrete
+   11 tag=4213 "Strobe" = "Off" On/Off | roh 0 vorg 0 | plain 0..1 | discrete auto
+-- Slot 2 id=1926 typ=Slot titel="2" kinder=1 plugin="H-Delay Mono"
+   klasse="5653544842444D682D64656C6179206D-0" uid="42FC46C5B9A2CC7075EE541259D3BA" typ=
+== Slot 2 id=1926 params=8
+   4098:On=On | 4101:Edit=Off | 4102:Bypass=On | 4125:Effect Type=H-Delay Mono
+   4126:Resize Channel=Off | 4103:Input MIDI Signal=Off | 4104:Temporary Disabled=Off
+   4127:Open Patcher=Off
+== Slot 2 "H-Delay Mono" id=1928 params=146
+   0 tag=10004202 "Bypass" = "On"  | roh 1 vorg 0 | plain 0..1 | discrete auto
+   1 tag=10004203 "Bank" = "Full Reset"  | roh 0 vorg 0 | plain 0..53 | discrete
+   2 tag=4201 "Delay Sec" = "375 ms"  | roh 0.374 vorg 0.374 | plain 0..1 | continuous auto
+   3 tag=4202 "Delay BPM" = "1/8D "  | roh 0.5789 vorg 0.579 | plain 0..1 | continuous auto
+   4 tag=4203 "Feedback" = "60 "  | roh 0.3 vorg 0.3 | plain 0..1 | continuous auto
+   5 tag=4204 "Sync" = "Host "  | roh 0.5 vorg 0.5 | plain 0..1 | discrete auto
+   6 tag=4205 "Mix" = "32 "  | roh 0.32 vorg 1 | plain 0..1 | continuous auto
+   7 tag=4206 "Output" = "0.0 dB"  | roh 0.5 vorg 0.5 | plain 0..1 | continuous auto
+   8 tag=4207 "Analog" = "Off "  | roh 0 vorg 0.5 | plain 0..1 | discrete auto
+   9 tag=4208 "LoFi" = "HiFi "  | roh 0 vorg 0 | plain 0..1 | discrete auto
+   10 tag=4209 "Rate" = "0.10 Hz"  | roh 0 vorg 0 | plain 0..1 | continuous auto
+   11 tag=4210 "Depth" = "0 %"  | roh 0 vorg 0 | plain 0..1 | continuous auto
+   12 tag=4211 "HiPass" = "Off "  | roh 0 vorg 0 | plain 0..1 | continuous auto
+   13 tag=4212 "LoPass" = "Off "  | roh 0.9997 vorg 1 | plain 0..1 | continuous auto
+   14 tag=4213 "Phase L" = "+ "  | roh 0 vorg 0 | plain 0..1 | discrete auto
+   15 tag=4214 "BPM" = "120 BPM"  | roh 0.3333 vorg 0.3333 | plain 0..1 | continuous auto
+   16 tag=9530 "Pitch Bend" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   17 tag=9529 "After Touch" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   18 tag=9401 "Bank Select" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   19 tag=9402 "Modulation Wheel" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   20 tag=9403 "Breath Controller" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   21 tag=9404 "Control 3" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   22 tag=9405 "Foot Controller" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   23 tag=9406 "Portamento Time" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   24 tag=9407 "Data Entry" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   25 tag=9408 "Channel Volume" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   26 tag=9409 "Balance" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   27 tag=9410 "Control 9" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   28 tag=9411 "Pan Position" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   29 tag=9412 "Expression Control" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   30 tag=9413 "Effect Control 1" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   31 tag=9414 "Effect Control 2" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   32 tag=9415 "Control 14" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   33 tag=9416 "Control 15" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   34 tag=9417 "General Control 1" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   35 tag=9418 "General Control 2" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   36 tag=9419 "General Control 3" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   37 tag=9420 "General Control 4" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   38 tag=9421 "Control 20" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   39 tag=9422 "Control 21" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   40 tag=9423 "Control 22" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   41 tag=9424 "Control 23" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   42 tag=9425 "Control 24" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   43 tag=9426 "Control 25" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   44 tag=9427 "Control 26" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   45 tag=9428 "Control 27" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   46 tag=9429 "Control 28" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   47 tag=9430 "Control 29" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   48 tag=9431 "Control 30" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   49 tag=9432 "Control 31" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   50 tag=9433 "Control 32" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   51 tag=9434 "Control 33" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   52 tag=9435 "Control 34" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   53 tag=9436 "Control 35" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   54 tag=9437 "Control 36" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   55 tag=9438 "Control 37" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   56 tag=9439 "Data Entry" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   57 tag=9440 "Control 39" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   58 tag=9441 "Control 40" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   59 tag=9442 "Control 41" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   60 tag=9443 "Control 42" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   61 tag=9444 "Control 43" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   62 tag=9445 "Control 44" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   63 tag=9446 "Control 45" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   64 tag=9447 "Control 46" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   65 tag=9448 "Control 47" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   66 tag=9449 "Control 48" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   67 tag=9450 "Control 49" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   68 tag=9451 "Control 50" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   69 tag=9452 "Control 51" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   70 tag=9453 "Control 52" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   71 tag=9454 "Control 53" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   72 tag=9455 "Control 54" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   73 tag=9456 "Control 55" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   74 tag=9457 "Control 56" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   75 tag=9458 "Control 57" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   76 tag=9459 "Control 58" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   77 tag=9460 "Control 59" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   78 tag=9461 "Control 60" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   79 tag=9462 "Control 61" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   80 tag=9463 "Control 62" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   81 tag=9464 "Control 63" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   82 tag=9465 "Sustain Pedal On/Off" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   83 tag=9466 "Portamento On/Off" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   84 tag=9467 "Sostenuto Pedal On/Off" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   85 tag=9468 "Soft Pedal On/Off" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   86 tag=9469 "Legato Pedal On/Off" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   87 tag=9470 "Hold2 Pedal On/Off" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   88 tag=9471 "Sound Variation" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   89 tag=9472 "Timbre" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   90 tag=9473 "Release Time" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   91 tag=9474 "Attack Time" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   92 tag=9475 "Brightness" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   93 tag=9476 "Sound Control 6" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   94 tag=9477 "Sound Control 7" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   95 tag=9478 "Sound Control 8" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   96 tag=9479 "Sound Control 9" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   97 tag=9480 "Sound Control 10" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   98 tag=9481 "General Control 5" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   99 tag=9482 "General Control 6" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   100 tag=9483 "General Control 7" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   101 tag=9484 "General Control 8" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   102 tag=9485 "Portamento Source" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   103 tag=9486 "Control 85" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   104 tag=9487 "Control 86" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   105 tag=9488 "Control 87" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   106 tag=9489 "Control 88" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   107 tag=9490 "Control 89" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   108 tag=9491 "Control 90" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   109 tag=9492 "Reverb Depth" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   110 tag=9493 "Tremolo Depth" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   111 tag=9494 "Chorus Depth" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   112 tag=9495 "Celeste Depth" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   113 tag=9496 "Phaser Depth" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   114 tag=9497 "Data Increment" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   115 tag=9498 "Data Decrement" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   116 tag=9499 "NRPN 1" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   117 tag=9500 "NRPN 2" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   118 tag=9501 "RPN 1" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   119 tag=9502 "RPN 2" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   120 tag=9503 "Control 102" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   121 tag=9504 "Control 103" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   122 tag=9505 "Control 104" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   123 tag=9506 "Control 105" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   124 tag=9507 "Control 106" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   125 tag=9508 "Control 107" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   126 tag=9509 "Control 108" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   127 tag=9510 "Control 109" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   128 tag=9511 "Control 110" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   129 tag=9512 "Control 111" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   130 tag=9513 "Control 112" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   131 tag=9514 "Control 113" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   132 tag=9515 "Control 114" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   133 tag=9516 "Control 115" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   134 tag=9517 "Control 116" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   135 tag=9518 "Control 117" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   136 tag=9519 "Control 118" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   137 tag=9520 "Control 119" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   138 tag=9521 "All Sound Off" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   139 tag=9522 "Reset All" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   140 tag=9523 "Local Control On/Off" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   141 tag=9524 "All Notes Off" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   142 tag=9525 "Omni Mode Off" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   143 tag=9526 "Omni Mode On" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   144 tag=9527 "Mono Mode On" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+   145 tag=9528 "Poly Mode On" = ""  | roh 0 vorg 0 | plain 0..1 | continuous
+-- Slot 3 id=1932 typ=Slot titel="3" kinder=1 plugin="TONE3000"
+   klasse="ABCDEF019182FAEB5446544654334B30-3" uid="84B12C7690BBC2382A4F4B75E179C65" typ=
+== Slot 3 id=1932 params=8
+   4098:On=On | 4101:Edit=On | 4102:Bypass=Off | 4125:Effect Type=TONE3000
+   4126:Resize Channel=Off | 4103:Input MIDI Signal=Off | 4104:Temporary Disabled=Off
+   4127:Open Patcher=Off
+== Slot 3 "TONE3000" id=1934 params=2125
+   0 tag=1368699459 "inputLevel" = "0.4992"  | roh 0.4992 vorg 0.5 | plain 0..1 | continuous auto
+   1 tag=1128262618 "toneBass" = "5.00"  | roh 0.5 vorg 0.5 | plain 0..1 | continuous auto
+   2 tag=1006241759 "toneMid" = "5.00"  | roh 0.5 vorg 0.5 | plain 0..1 | continuous auto
+   3 tag=307695311 "toneTreble" = "5.00"  | roh 0.5 vorg 0.5 | plain 0..1 | continuous auto
+   4 tag=1305090924 "outputLevel" = "0.4717"  | roh 0.4717 vorg 0.5 | plain 0..1 | continuous auto
+   5 tag=1425407049 "gateThreshold" = "-94.58"  | roh 0.0542 vorg 0.2 | plain 0..1 | continuous auto
+   6 tag=826875331 "targetLoudness" = "-18.00"  | roh 0.7 vorg 0.7 | plain 0..1 | continuous auto
+   7 tag=418843052 "calibrateInput" = "Off"  | roh 0 vorg 0 | plain 0..1 | discrete auto
+   8 tag=218598413 "inputCalibrationLevel" = "12.00"  | roh 0.6 vorg 0.6 | plain 0..1 | continuous a
+  ~ uto
+   9 tag=637074527 "gateEnabled" = "On"  | roh 1 vorg 1 | plain 0..1 | discrete auto
+   10 tag=415433740 "toneEqEnabled" = "On"  | roh 1 vorg 1 | plain 0..1 | discrete auto
+   11 tag=1796410116 "outputBalance" = "0.5000"  | roh 0.5 vorg 0.5 | plain 0..1 | continuous auto
+   12 tag=1989233335 "spreadEnabled" = "Off"  | roh 0 vorg 0 | plain 0..1 | discrete auto
+   13 tag=1936535631 "spreadOffset" = "0.8125"  | roh 0.8125 vorg 0.8125 | plain 0..1 | continuous a
+  ~ uto
+   14 tag=26261581 "spreadWobble" = "0.2500"  | roh 0.25 vorg 0.25 | plain 0..1 | continuous auto
+   15 tag=143237926 "spreadWobbleEnabled" = "On"  | roh 1 vorg 1 | plain 0..1 | discrete auto
+   16 tag=271115594 "spreadCrossover" = "0.5000"  | roh 0.5 vorg 0.5 | plain 0..1 | continuous auto
+   17 tag=1009864585 "spreadCrossoverEnabled" = "On"  | roh 1 vorg 1 | plain 0..1 | discrete auto
+   18 tag=1815067195 "spreadDiffuseEnabled" = "On"  | roh 1 vorg 1 | plain 0..1 | discrete auto
+   19 tag=981245157 "alignEnabled" = "Off"  | roh 0 vorg 0 | plain 0..1 | discrete auto
+   20 tag=1557651553 "alignOffset" = "0.5000"  | roh 0.5 vorg 0.5 | plain 0..1 | continuous auto
+   21 tag=1794861151 "alignWobble" = "0.2500"  | roh 0.25 vorg 0.25 | plain 0..1 | continuous auto
+   22 tag=814619348 "alignWobbleEnabled" = "Off"  | roh 0 vorg 0 | plain 0..1 | discrete auto
+   23 tag=109601784 "alignCrossover" = "0.5000"  | roh 0.5 vorg 0.5 | plain 0..1 | continuous auto
+   24 tag=471109915 "alignCrossoverEnabled" = "Off"  | roh 0 vorg 0 | plain 0..1 | discrete auto
+   25 tag=1153054797 "alignDiffuseEnabled" = "Off"  | roh 0 vorg 0 | plain 0..1 | discrete auto
+   26 tag=753734828 "chainPanLeft" = "0.0000"  | roh 0 vorg 0 | plain 0..1 | continuous auto
+   27 tag=1896478153 "chainPanRight" = "1.0000"  | roh 1 vorg 1 | plain 0..1 | continuous auto
+   28 tag=637074366 "chainPanLinked" = "On"  | roh 1 vorg 1 | plain 0..1 | discrete auto
+   29 tag=191265744 "chainSoloLeft" = "Off"  | roh 0 vorg 0 | plain 0..1 | discrete auto
+   30 tag=1639805733 "chainSoloRight" = "Off"  | roh 0 vorg 0 | plain 0..1 | discrete auto
+   31 tag=1807965959 "chainInvertLeft" = "Off"  | roh 0 vorg 0 | plain 0..1 | discrete auto
+   32 tag=217904846 "chainInvertRight" = "Off"  | roh 0 vorg 0 | plain 0..1 | discrete auto
+   33 tag=1998290214 "osEnabled" = "Off"  | roh 0 vorg 0 | plain 0..1 | discrete
+   34 tag=1258817724 "osFactor" = "2x"  | roh 0 vorg 0 | plain 0..1 | discrete
+   35 tag=1189779749 "gateRelease" = "50" ms | roh 0.5 vorg 0.5 | plain 0..1 | continuous auto
+   36 tag=578381971 "gateHold" = "20.00"  | roh 0.1 vorg 0.1 | plain 0..1 | continuous auto
+   37 tag=758666139 "gateRange" = "80.00"  | roh 1 vorg 1 | plain 0..1 | continuous auto
+   38 tag=772163658 "pitchEnabled" = "Off"  | roh 0 vorg 0 | plain 0..1 | discrete auto
+   39 tag=1096646556 "pitchSemitones" = "0.00"  | roh 0.5 vorg 0.5 | plain 0..1 | continuous auto
+   40 tag=544190101 "pitchStep" = "On"  | roh 1 vorg 1 | plain 0..1 | discrete auto
+   41 tag=1945742073 "pitchTonality" = "20000" Hz | roh 1 vorg 1 | plain 0..1 | continuous auto
+   42 tag=1228745657 "pitchWindow" = "30 ms"  | roh 0.3333 vorg 0.3333 | plain 0..1 | discrete
+   43 tag=1652130012 "Bypass" = "Off"  | roh 0 vorg 0 | plain 0..1 | discrete auto
+   44 tag=1886553053 "Program" = "Einstein Halbgas"  | roh 0.0079 vorg 0 | plain 0..127 | discrete a
+  ~ uto
+   (2080 "MIDI CC"-Parameter übersprungen, Index 45..2124)
+-- Slot 4 id=1937 typ=Slot titel="4" kinder=0 (leer)
+== Slot 4 id=1937 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 5 id=1938 typ=Slot titel="5" kinder=0 (leer)
+== Slot 5 id=1938 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 6 id=1939 typ=Slot titel="6" kinder=0 (leer)
+== Slot 6 id=1939 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 7 id=1940 typ=Slot titel="7" kinder=0 (leer)
+== Slot 7 id=1940 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 8 id=1941 typ=Slot titel="8" kinder=0 (leer)
+== Slot 8 id=1941 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 9 id=1942 typ=Slot titel="9" kinder=0 (leer)
+== Slot 9 id=1942 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 10 id=1943 typ=Slot titel="10" kinder=0 (leer)
+== Slot 10 id=1943 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 11 id=1944 typ=Slot titel="11" kinder=0 (leer)
+== Slot 11 id=1944 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 12 id=1945 typ=Slot titel="12" kinder=0 (leer)
+== Slot 12 id=1945 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 13 id=1946 typ=Slot titel="13" kinder=0 (leer)
+== Slot 13 id=1946 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 14 id=1947 typ=Slot titel="14" kinder=0 (leer)
+== Slot 14 id=1947 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 15 id=1948 typ=Slot titel="15" kinder=0 (leer)
+== Slot 15 id=1948 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+-- Slot 16 id=1949 typ=Slot titel="16" kinder=0 (leer)
+== Slot 16 id=1949 params=8
+   4098:On= | 4101:Edit= | 4102:Bypass= | 4125:Effect Type=No Effect | 4126:Resize Channel=Off
+   4103:Input MIDI Signal= | 4104:Temporary Disabled=Off | 4127:Open Patcher=Off
+--- Befehle ---
+Befehl Preset/Next canPerform=true
+Befehl Preset/Next (Taste) canPerform=true
+Befehl Preset/Previous canPerform=true
+Befehl Preset/Previous (Taste) canPerform=true
+Befehl Preset/Open Browser canPerform=true
+Befehl Preset/Open Browser (Taste) canPerform=true
+Befehl Preset/Open/Close Browser canPerform=false
+Befehl Preset/Open/Close Browser (Taste) canPerform=false
+--- Fundliste (20) ---
+   Slot 1 "Tuner" tag=4207 "Bypass" = Off
+   Slot 1 "Tuner" tag=4202 "Frequency" = 0.0
+   Slot 2 "H-Delay Mono" tag=10004202 "Bypass" = On
+   Slot 2 "H-Delay Mono" tag=4206 "Output" = 0.0 dB
+   Slot 3 "TONE3000" tag=1368699459 "inputLevel" = 0.4992
+   Slot 3 "TONE3000" tag=1128262618 "toneBass" = 5.00
+   Slot 3 "TONE3000" tag=1006241759 "toneMid" = 5.00
+   Slot 3 "TONE3000" tag=307695311 "toneTreble" = 5.00
+   Slot 3 "TONE3000" tag=1305090924 "outputLevel" = 0.4717
+   Slot 3 "TONE3000" tag=1425407049 "gateThreshold" = -94.58
+   Slot 3 "TONE3000" tag=418843052 "calibrateInput" = Off
+   Slot 3 "TONE3000" tag=218598413 "inputCalibrationLevel" = 12.00
+   Slot 3 "TONE3000" tag=637074527 "gateEnabled" = On
+   Slot 3 "TONE3000" tag=415433740 "toneEqEnabled" = On
+   Slot 3 "TONE3000" tag=1796410116 "outputBalance" = 0.5000
+   Slot 3 "TONE3000" tag=1189779749 "gateRelease" = 50
+   Slot 3 "TONE3000" tag=578381971 "gateHold" = 20.00
+   Slot 3 "TONE3000" tag=758666139 "gateRange" = 80.00
+   Slot 3 "TONE3000" tag=1652130012 "Bypass" = Off
+   Slot 3 "TONE3000" tag=1886553053 "Program" = Einstein Halbgas
+--- Suchlauf beendet ---
+--- Beobachtung läuft ---
+ÄNDERUNG Slot 1 "Tuner" tag=4204 "Cent" = "-49" roh 0.01
+ÄNDERUNG Slot 1 "Tuner" tag=4204 "Cent" = "-39" roh 0.11
+ÄNDERUNG Slot 1 "Tuner" tag=4205 "Oct" = "1" roh 0.51
+ÄNDERUNG Slot 1 "Tuner" tag=4203 "Note" = "E " roh 0.2921
+ÄNDERUNG Slot 1 "Tuner" tag=4209 "Locked" = "On" roh 1
+ÄNDERUNG Slot 1 "Tuner" tag=4202 "Frequency" = "82.7" roh 0.0207
+ÄNDERUNG Slot 1 "Tuner" tag=4204 "Cent" = "-31" roh 0.19
+ÄNDERUNG Slot 1 "Tuner" tag=4204 "Cent" = "-24" roh 0.26
+ÄNDERUNG Slot 1 "Tuner" tag=4204 "Cent" = "-21" roh 0.29
+ÄNDERUNG Slot 1 "Tuner" tag=4204 "Cent" = "-16" roh 0.34
+ÄNDERUNG Slot 1 "Tuner" tag=4210 "In Tune" = "On" roh 1
+ÄNDERUNG Slot 1 "Tuner" tag=4210 "In Tune" = "Off" roh 0
+ÄNDERUNG Slot 1 "Tuner" tag=4202 "Frequency" = "82.6" roh 0.0207
+ÄNDERUNG Slot 1 "Tuner" tag=4202 "Frequency" = "82.4" roh 0.0206
+ÄNDERUNG Slot 1 "Tuner" tag=4210 "In Tune" = "On" roh 1
+ÄNDERUNG Slot 1 "Tuner" tag=4202 "Frequency" = "82.6" roh 0.0206
+ÄNDERUNG Slot 1 "Tuner" tag=4210 "In Tune" = "Off" roh 0
+ÄNDERUNG Slot 1 "Tuner" tag=4202 "Frequency" = "82.5" roh 0.0206
+ÄNDERUNG Slot 1 "Tuner" tag=4202 "Frequency" = "82.4" roh 0.0206
+ÄNDERUNG Slot 1 "Tuner" tag=4210 "In Tune" = "On" roh 1
+ÄNDERUNG Slot 1 "Tuner" tag=4210 "In Tune" = "Off" roh 0
+ÄNDERUNG Slot 1 "Tuner" tag=4205 "Oct" = "" roh 0
+ÄNDERUNG Slot 1 "Tuner" tag=4203 "Note" = "--" roh 0
+ÄNDERUNG Slot 1 "Tuner" tag=4209 "Locked" = "Off" roh 0
+ÄNDERUNG Slot 1 "Tuner" tag=4205 "Oct" = "1" roh 0.51
+ÄNDERUNG Slot 1 "Tuner" tag=4203 "Note" = "E " roh 0.2921
+ÄNDERUNG Slot 1 "Tuner" tag=4209 "Locked" = "On" roh 1
+ÄNDERUNG Slot 1 "Tuner" tag=4205 "Oct" = "" roh 0
+ÄNDERUNG Slot 1 "Tuner" tag=4203 "Note" = "--" roh 0
+ÄNDERUNG Slot 1 "Tuner" tag=4209 "Locked" = "Off" roh 0
+ÄNDERUNG Slot 1 "Tuner" tag=4205 "Oct" = "1" roh 0.51
+ÄNDERUNG Slot 1 "Tuner" tag=4203 "Note" = "E " roh 0.2921
+ÄNDERUNG Slot 1 "Tuner" tag=4209 "Locked" = "On" roh 1
+ÄNDERUNG Slot 1 "Tuner" tag=4205 "Oct" = "" roh 0
+ÄNDERUNG Slot 1 "Tuner" tag=4203 "Note" = "--" roh 0
+ÄNDERUNG Slot 1 "Tuner" tag=4209 "Locked" = "Off" roh 0
+ÄNDERUNG Slot 1 "Tuner" tag=4101 "Edit" = "Off" roh 0
+(Stopp-Datei gefunden)
+--- Zusammenfassung: 7 Parameter geändert ---
+   Slot 1 "Tuner" tag=4204 "Cent" 377x, zuletzt "-49"
+   Slot 1 "Tuner" tag=4205 "Oct" 16x, zuletzt ""
+   Slot 1 "Tuner" tag=4203 "Note" 16x, zuletzt "--"
+   Slot 1 "Tuner" tag=4209 "Locked" 16x, zuletzt "Off"
+   Slot 1 "Tuner" tag=4202 "Frequency" 72x, zuletzt "0.0"
+   Slot 1 "Tuner" tag=4210 "In Tune" 40x, zuletzt "Off"
+   Slot 1 "Tuner" tag=4101 "Edit" 1x, zuletzt "Off"
+--- Beobachtung beendet ---

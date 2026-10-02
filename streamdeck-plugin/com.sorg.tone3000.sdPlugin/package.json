@@ -1,0 +1,11 @@
+{
+	"name": "tone3000-runtime",
+	"version": "0.1.0",
+	"description": "Laufzeit-Abhängigkeiten mit nativen Teilen (MIDI, SVG-Renderer, Audio-Eingang fürs Stimmgerät), neben bin/plugin.js installiert, damit der gebündelte Code sie laden kann.",
+	"private": true,
+	"dependencies": {
+		"@julusian/midi": "^3.1.2",
+		"@resvg/resvg-js": "^2.6.2",
+		"audify": "^1.10.1"
+	}
+}
