@@ -19,7 +19,7 @@ import { ImageCache } from "./image-cache";
  *
  * Der Zielzustand kommt aus dem letzten 0x22 (protokoll.md 4.4); was gesendet wird,
  * entscheidet Store.toggle. Ohne Verbindung und bei bit5 = 0 — bei amp auch bei
- * bit6 = 0 — ist die Taste gesperrt: Die Noten wirken ohne Titelprüfung auf Platz 6,
+ * bit6 = 0 — ist die Taste gesperrt: Die Noten wirken ohne Titelprüfung auf den Deck-Kanal,
  * also womöglich auf einen fremden Kanal (4.1). Ein gesperrter Druck zeigt das
  * Warnzeichen.
  */

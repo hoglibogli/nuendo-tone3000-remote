@@ -529,20 +529,90 @@ module.exports = async function run() {
 
 		const key = { id: "k", images: [], alerts: 0, isKey: () => true, isDial: () => false, setImage: async (img) => key.images.push(img), showAlert: async () => key.alerts++ };
 		action.onWillAppear({ action: key, payload: { settings: {} } });
+		// Kurzer Druck: Drücken und loslassen (die Tuner-Taste wirkt beim Loslassen).
 		action.onKeyDown({ action: key, payload: { settings: {} } });
+		action.onKeyUp({ action: key, payload: { settings: {} } });
 		e.flush();
 		e.port.emit({ type: "status", status: { kind: "error", code: "missing-input", text: "Eingang MADI 6 fehlt", key: "Eingang?" } });
 		e.flush();
 		await sleep(A.TUNER_KEY_INTERVAL_MS + 40);
 		const last = () => key.images[key.images.length - 1];
-		check("Taste im Modus, Eingang fehlt: „Eingang?“", last() === render.renderTunerKey(null, { kind: "error", text: "Eingang?" }), true);
+		check("Taste im Modus, Eingang fehlt: „Eingang?“", last() === render.renderTunerKey(null, { kind: "error", text: "Eingang?" }, true), true); // Vorgabe: Stummschaltung an = roter Rahmen
 		e.port.emit({ type: "status", status: { kind: "running", rate: 48000 } });
 		e.port.emit({ type: "reading", reading: { note: "A", octave: 2, cents: 0.4, state: "held", level: -80, t: 3 } });
 		e.flush();
 		await sleep(A.TUNER_KEY_INTERVAL_MS + 40);
-		check("gehalten: gedimmtes Bild", last() === render.renderTunerKey({ note: "A", octave: 2, cent: 0, locked: true, inTune: true, found: true, held: true }, { kind: "ok" }), true);
+		check("gehalten: gedimmtes Bild", last() === render.renderTunerKey({ note: "A", octave: 2, cent: 0, locked: true, inTune: true, found: true, held: true }, { kind: "ok" }, true), true);
 		check("kein Warnzeichen", key.alerts, 0);
 		action.onWillDisappear({ action: key });
+
+		// Langer Druck: automatische Stummschaltung umschalten, roter Rahmen = an
+		// (Wunsch des Users 2026-10-07). Kurz wirkt beim Loslassen, lang schon beim Halten.
+		{
+			const g = connected(0x64);
+			const act = new A.TunerAction(g.s, async () => []);
+			const saved = [];
+			const lk = {
+				id: "lk",
+				images: [],
+				alerts: 0,
+				isKey: () => true,
+				isDial: () => false,
+				setImage: async (img) => lk.images.push(img),
+				showAlert: async () => lk.alerts++,
+				setSettings: async (s) => saved.push(s),
+			};
+			const shown = () => lk.images[lk.images.length - 1];
+			const OKS = { kind: "ok" };
+			const notes = (from) => g.sent.slice(from).filter((b) => b[0] === 0x92).map(hex);
+			check("muteArmed: Vorgabe an, Haken aus, Steinberg-Quelle nie", [A.muteArmed({}), A.muteArmed({ muteChannel: false }), A.muteArmed({ source: "steinberg" })], [true, false, false]);
+
+			act.onWillAppear({ action: lk, payload: { settings: {} } });
+			await sleep(A.TUNER_KEY_INTERVAL_MS + 40);
+			check("Vorgabe (Stummschaltung an): roter Rahmen", shown() === render.renderToggleKey("tuner", false, OKS, true), true);
+			ok("roter und goldener Rahmen sind verschieden", render.renderToggleKey("tuner", false, OKS, true) !== render.renderToggleKey("tuner", false, OKS, false));
+
+			const n0 = g.sent.length;
+			act.onKeyDown({ action: lk, payload: { settings: {} } });
+			await sleep(A.LONG_PRESS_MS / 2);
+			check("halb so lang gehalten: noch nichts passiert", [saved.length, g.s.tunerActive()], [0, false]);
+			await sleep(A.LONG_PRESS_MS / 2 + 60);
+			check("lang gehalten: Setting gespeichert, Stummschaltung aus — noch während des Haltens", saved, [{ muteChannel: false }]);
+			act.onKeyUp({ action: lk, payload: { settings: {} } });
+			g.flush();
+			check("Loslassen nach langem Druck: Tuner bleibt aus, keine Note", [g.s.tunerActive(), notes(n0)], [false, []]);
+			await sleep(A.TUNER_KEY_INTERVAL_MS + 40);
+			check("jetzt goldener Rahmen", shown() === render.renderToggleKey("tuner", false, OKS, false), true);
+
+			const off = { muteChannel: false };
+			const n1 = g.sent.length;
+			act.onKeyDown({ action: lk, payload: { settings: off } });
+			act.onKeyUp({ action: lk, payload: { settings: off } });
+			g.flush();
+			check("kurzer Druck: Tuner an, ohne Stummschaltung kein Mute", [g.s.tunerActive(), notes(n1)], [true, []]);
+
+			const n2 = g.sent.length;
+			act.onKeyDown({ action: lk, payload: { settings: off } });
+			await sleep(A.LONG_PRESS_MS + 60);
+			act.onKeyUp({ action: lk, payload: { settings: off } });
+			g.flush();
+			check("langer Druck im Modus: Stummschaltung an, Input 6 sofort stumm, Tuner bleibt an", [saved[saved.length - 1], notes(n2), g.s.tunerActive()], [{ muteChannel: true }, [MUTE_ON], true]);
+			await sleep(A.TUNER_KEY_INTERVAL_MS + 40);
+			ok("im Modus: heller roter Rahmen (Tasten-Bild mit roter Kante)", shown() !== render.renderTunerKey(g.s.tuner().reading, g.s.tuner().keyStatus, false) && shown() === render.renderTunerKey(g.s.tuner().reading, g.s.tuner().keyStatus, true));
+
+			const n3 = g.sent.length;
+			const on = { muteChannel: true };
+			act.onKeyDown({ action: lk, payload: { settings: on } });
+			act.onKeyUp({ action: lk, payload: { settings: on } });
+			g.flush();
+			check("kurzer Druck: Tuner aus, Input 6 entmutet", [g.s.tunerActive(), notes(n3)], [false, [MUTE_OFF]]);
+			check("kein Warnzeichen", lk.alerts, 0);
+
+			act.onKeyDown({ action: lk, payload: { settings: on } });
+			act.onWillDisappear({ action: lk });
+			await sleep(A.LONG_PRESS_MS + 60);
+			check("Taste verschwindet während des Haltens: kein langer Druck mehr", saved.length, 2);
+		}
 
 		// Bilder: gehalten und Eingang fehlt (zum Ansehen in test-output)
 		mkdirSync(outputDir, { recursive: true });

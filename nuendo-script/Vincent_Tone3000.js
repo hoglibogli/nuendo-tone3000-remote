@@ -3,13 +3,21 @@
 //
 // Zwei Aufgaben auf einem Portpaar:
 //
-// Betrieb (Protokoll 3 und 4): Das Stream Deck steuert Input 6 — Gain und EQ von
-// TONE3000 in Insert-Slot 3, dessen Presets per Namen, Mute, den Bypass des
-// Delays in Slot 2 und die Fenster von Tuner (Slot 1), Delay und TONE3000. Das
-// Script meldet Werte, Presetnamen, Zustände und Plugin-Namen zurück, im
-// Tuner-Modus dazu Note und Cent des Steinberg-Tuners in Slot 1. Vollständig
-// beschrieben in docs/protokoll.md; das Stream-Deck-Plugin wird gegen diese Datei
-// gebaut, Änderungen am Protokoll also immer dort mitziehen.
+// Betrieb (Protokoll 3 und 4): Das Stream Deck steuert den Eingangskanal
+// "Mono In 6" (Input 6) — Gain und EQ von TONE3000 in Insert-Slot 3, dessen
+// Presets per Namen, Mute, den Bypass des Delays in Slot 2 und die Fenster von
+// Tuner (Slot 1), Delay und TONE3000. Das Script meldet Werte, Presetnamen,
+// Zustände und Plugin-Namen zurück, im Tuner-Modus dazu Note und Cent des
+// Steinberg-Tuners in Slot 1. Vollständig beschrieben in docs/protokoll.md; das
+// Stream-Deck-Plugin wird gegen diese Datei gebaut, Änderungen am Protokoll also
+// immer dort mitziehen.
+//
+// Der Betrieb folgt dem Kanal über seinen NAMEN, nicht über seinen Platz:
+// Eingangskanäle gehören zum Projekt, Zahl und Reihenfolge wechseln also (Befund
+// 2026-10-06: "Mono In 6" als einziger Eingang auf Platz 0). Alles hängt an einer
+// eigenen Zone mit genau einem Platz, dem Deck-Kanal; das Script schiebt sie im
+// Leerlauf dorthin, wo "Mono In 6" steht (Abschnitte "Deck-Kanal" und
+// "Deck-Suche", docs/protokoll.md 4.7).
 //
 // Suchlauf (Protokoll 2, unverändert): Das Script listet auf Anfrage, was Nuendo
 // über Input 6 preisgibt:
@@ -22,7 +30,8 @@
 //
 // Dazu ein Beobachtungsmodus: Er meldet jede Parameteränderung an Plugins und
 // Slots des Zielkanals, während man in TONE3000 Presets wechselt oder an Reglern
-// dreht. So zeigt sich, ob ein Presetwechsel überhaupt beim Host ankommt.
+// dreht. So zeigt sich, ob ein Presetwechsel überhaupt beim Host ankommt. Er geht
+// nur, wenn der Suchlauf den Deck-Kanal traf (dort hängt der Parameter-Callback).
 //
 // Und zwei Prüfbefehle für den Presetwechsel (TONE3000 ab 0.0.9): einen
 // Parameter eines Insert-Slots über seinen Titel setzen ("Program", "MIDI CC 0|20",
@@ -39,7 +48,8 @@
 // Protokoll:
 //   Deck -> Nuendo   F0 7D 01 F7                  Ping, Antwort F0 7D 01 F7
 //   Deck -> Nuendo   F0 7D 02 [Kanal hex] F7      Suchlauf, ohne Kanal TARGET_TITLE
-//   Deck -> Nuendo   F0 7D 03 F7                  Beobachtung an (Ziel des letzten Laufs)
+//   Deck -> Nuendo   F0 7D 03 F7                  Beobachtung an (Ziel des letzten Laufs,
+//                    nur wenn es der Deck-Kanal war)
 //   Deck -> Nuendo   F0 7D 04 F7                  Beobachtung aus, mit Zusammenfassung
 //   Deck -> Nuendo   F0 7D 05 <Text hex-ascii> F7 Setzen, Text "<ziel>;<titel>;<modus>;<wert>"
 //                    ziel  "3" = Plugin in Insert-Slot 3, "3/slot" = der Slot selbst
@@ -65,7 +75,9 @@
 //                    ab Protokoll 4 zuletzt 0x24.
 //                    0x20 entfällt für Parameter, die sich nicht lesen lassen (kein
 //                    TONE3000, Titel nicht gefunden). Vor der ersten Aktivierung der
-//                    Seite wird die Abfrage gemerkt und mit der Aktivierung beantwortet.
+//                    Seite wird die Abfrage gemerkt und beantwortet, sobald der
+//                    Deck-Kanal das erste Mal positioniert ist (mit der Aktivierung,
+//                    wenn er schon richtig steht, sonst am Ende der ersten Suche).
 //   Deck -> Nuendo   F0 7D 11 <p> <v1> <v0> F7    TONE3000-Parameter setzen; p 0 Gain
 //                    (inputLevel), 1 Bass (toneBass), 2 Mid (toneMid), 3 Treble
 //                    (toneTreble); Wert v1*128+v0 = 0..16383, normiert Wert/16383.
@@ -79,15 +91,15 @@
 //                    "Preset <Name> nicht übernommen, aktiv <x>", stand der Name schon
 //                    vorher da, "Preset <Name> laut Host schon aktiv, ..."
 //   Deck -> Nuendo   92 <n> <vel>                 Note On MIDI-Kanal 3, Velocity =
-//                    Zielzustand (127 an, 0 aus), KEIN Note Off hinterher:
-//                    n = 0 Mute Input 6, 1 Tuner-Fenster (Slot 1), 2 Delay-Bypass
+//                    Zielzustand (127 an, 0 aus), KEIN Note Off hinterher, alles am
+//                    Deck-Kanal: n = 0 Mute, 1 Tuner-Fenster (Slot 1), 2 Delay-Bypass
 //                    (Slot 2, 127 = Bypass an), 3 Delay-Fenster, 4 TONE3000-Fenster (Slot 3)
 //   Nuendo -> Deck   F0 7D 20 <p> <v1> <v0> <Klartext hex-ascii> F7
 //                    Parameterwert 14 Bit und Klartext des Hosts (z. B. "5.00")
 //   Nuendo -> Deck   F0 7D 21 <Name hex-ascii> F7 aktives Preset, leer = unbekannt
 //                    (ohne aktives Preset zeigt TONE3000 den Namen von Programm 0)
 //   Nuendo -> Deck   F0 7D 22 <flags> F7          bit n = Zustand von Note n (n = 0..4),
-//                    bit5 Platz 6 heißt TARGET_TITLE, bit6 TONE3000 in Slot 3 gefunden
+//                    bit5 Deck-Kanal heißt TARGET_TITLE, bit6 TONE3000 in Slot 3 gefunden
 //   Nuendo -> Deck   F0 7D 23 <s> <Name hex-ascii> F7  Plugin-Name in Slot s (0..2)
 //   Unverlangt sendet das Script nur, wenn ein Callback des Hosts eine Änderung
 //   meldet, immer mit Dedup, und erst nach der Aktivierung — beim Aktivieren an sich
@@ -108,8 +120,8 @@
 //                    Slot 1 wird nichts gesetzt (0x24 mit bit3 = 0). Das Deck schickt
 //                    seinen Modus bei jedem Verbindungsaufbau — so hebt ein 0x13 0 eine
 //                    liegengebliebene Tuner-Mute auf —, und einmal 0x13 0, wenn ein 0x24
-//                    außerhalb des Modus bit4 meldet. Vor der Aktivierung gemerkt und mit
-//                    ihr ausgeführt, wie eine Abfrage.
+//                    außerhalb des Modus bit4 meldet. Vor der Aktivierung gemerkt und
+//                    ausgeführt wie eine Abfrage (vor ihr, wenn beide ausstehen).
 //   Nuendo -> Deck   F0 7D 24 <flags> <cent+64> <oct+64> <Note hex-ascii> F7
 //                    flags bit0 Ton erkannt (Locked), bit1 gestimmt (In Tune), bit2 Modus
 //                    an, bit3 Tuner in Slot 1 gefunden, bit4 Tuner-Mute an. cent -50..50
@@ -140,32 +152,42 @@ var midiremote_api = require('midiremote_api_v1')
 var PORTS = { from: 'sd_tone3000', to: 'tone3000_sd' }
 
 // Der Zielkanal wird über seinen Namen gesucht, nicht über die Position —
-// umsortierte oder ausgeblendete Eingänge verschieben sonst die Zuordnung.
-// "Input 6" heißt in der MixConsole "Mono In 6" und liegt auf Platz 6 der Zone
-// (Platz 0 ist "Stereo In 1-2"), belegt durch die Mute-Gegenprobe im ersten
-// Suchlauf am 2026-10-01.
+// Eingangskanäle gehören zum Projekt, ihre Zahl und Reihenfolge wechseln. "Input 6"
+// heißt in der MixConsole "Mono In 6". Im Projekt vom 2026-10-01 lag er auf Platz 6
+// (Platz 0 "Stereo In 1-2", belegt durch die Mute-Gegenprobe), im Projekt vom
+// 2026-10-06 ist er der einzige Eingang, also Platz 0. Der Betrieb folgt diesem
+// Namen über die Deck-Zone (Deck-Suche); bit5 heißt "Deck-Kanal heißt so".
 var TARGET_TITLE = 'Mono In 6'
-
-// Der Betrieb (Protokoll 3) bindet fest an diesen Platz: Seine Bindungen entstehen
-// beim Laden des Scripts, wenn noch kein Titel bekannt ist. Der Titel wird geprüft
-// und als bit5 gemeldet; Regler und Presets wirken nur, wenn er TARGET_TITLE ist.
-var TARGET_INDEX = 6
-var TARGET_FALLBACK_INDEX = TARGET_INDEX
-
-// Nur dieser Platz bekommt einen Callback für Parameteränderungen. An allen 32
-// Eingängen würde jede Pegelbewegung ins Script laufen — beim Meter der FaderBank
-// war genau so etwas der Verdacht, als Nuendo träge wurde. Der Betrieb hängt an
-// demselben Callback (Rückmeldung der TONE3000-Regler), daher derselbe Platz.
-var WATCH_INDEX = TARGET_INDEX
 
 // Beobachtung: je Parameter die ersten Änderungen einzeln, danach nur noch
 // gezählt; dazu eine Obergrenze für die ganze Sitzung.
 var WATCH_LINES_PER_PARAM = 6
 var WATCH_MAX_LINES = 600
 
-// Plätze der Eingangszone. Reicht das nicht bis Input 6, steht im Suchlauf
-// "nicht gefunden", und die Zahl muss hoch.
+// Plätze der Such-Zone. Steht TARGET_TITLE dahinter (Projekt mit mehr Eingängen),
+// findet ihn der Rückfall der Deck-Suche schrittweise; der Suchlauf nennt ihn dann
+// nur, wenn der Deck-Kanal schon dort steht.
 var NUM_INPUTS = 32
+
+// Deck-Suche im Leerlauf (page.mOnIdle, Abschnitt "Deck-Suche"). Abstand zweier
+// Durchgänge, solange es etwas zu tun gibt; ohne Anlass kehrt der Leerlauf sofort
+// zurück. Wie die FaderBank (60 ms im Sync, 500 ms sonst), hier dazwischen: Jeder
+// Durchgang bewegt höchstens einmal, und zu dicht geraten wartet er nur auf Titel.
+var SEEK_PASS_MS = 150
+// Runden über die Such-Zone (mResetBank, dann k-mal mShiftRight; der Sprung des
+// Rückfalls zählt auch als Runde). Je Runde so viele Durchgänge Warten auf den Titel
+// des Ziels, dann die nächste Runde, nach der letzten aufgeben bis zum nächsten Anlass.
+var SEEK_MAX_ROUNDS = 3
+var SEEK_VERIFY_PASSES = 4
+// Neue Anlässe mitten in einer Suche (Eingänge ändern sich weiter) beginnen sie mit
+// frischen Runden neu, höchstens so oft — danach aufgeben. Die letzte Sicherung gegen
+// eine Suche, die sich über Meldungen des Hosts selbst anstößt.
+var SEEK_MAX_RESTARTS = 8
+// Rückfall jenseits der Such-Zone: höchstens so viele Einzelschritte. So viele
+// Durchgänge ohne Bewegung (der Schub läuft am Ende der Liste ins Leere) gelten als
+// Ende der Eingänge.
+var SEEK_MAX_STEPS = 256
+var SEEK_STEP_WAIT = 2
 
 // Slots, deren Plugin vollständig ausgegeben wird, nullbasiert: Slot 1 trägt den
 // Tuner, Slot 2 das Delay, Slot 3 TONE3000. Dazu jeder Slot, dessen Plugin-Titel
@@ -238,7 +260,7 @@ var SLOT_TUNER = 0
 var SLOT_DELAY = 1
 var SLOT_T3K = 2
 var DECK_SLOTS = 3
-// MIDI-Kanal 3. Kanal 1 tragen die Mute-Tasten aller Eingänge, Kanal 2 die
+// MIDI-Kanal 3. Kanal 1 tragen die Mute-Tasten der Such-Zone, Kanal 2 die
 // Preset-Befehle des Suchlaufs.
 var DECK_CHANNEL = 2
 // Surface-Zeile der Deck-Tasten; 0 und 1 (Mute) und 3 (Preset-Befehle) sind belegt.
@@ -464,9 +486,24 @@ function num(value) {
 //------------------------------------------------------------------------------
 // Eingangskanäle
 //------------------------------------------------------------------------------
-// Reine Typzone ohne setFollowVisibility: listet alle Eingänge, auch
-// ausgeblendete (E-16 der FaderBank) — genau richtig, um einen Kanal über den
-// Namen zu finden.
+// Zwei Zonen über dieselbe Liste aller Eingänge. Beide sind reine Typzonen ohne
+// setFollowVisibility: Sie listen auch ausgeblendete Eingänge (E-16 der FaderBank)
+// und zählen gleich, Platz k ist in beiden derselbe Kanal.
+//
+//   Such-Zone "Eingaenge"       NUM_INPUTS Plätze, wird nie verschoben. Liefert die
+//                               Titel aller Eingänge (daraus der Platz von
+//                               TARGET_TITLE), die Mute-Tasten auf MIDI-Kanal 1 und
+//                               den Suchlauf (Protokoll 2).
+//   Deck-Zone "Tone3000 Ziel"   genau ein Platz, der Deck-Kanal. An ihm hängt der
+//                               ganze Betrieb (Protokoll 3 und 4); die Deck-Suche
+//                               schiebt ihn im Leerlauf auf TARGET_TITLE.
+//
+// Bindungen entstehen beim Laden, wenn noch kein Titel bekannt ist. Fest an einen
+// Platz gebunden, hing der Betrieb an der Reihenfolge der Eingänge, und die gehört
+// zum Projekt: Am 2026-10-06 war "Mono In 6" der einzige Eingang (Platz 0), das
+// Script band an Platz 6, bit5 blieb 0. Die Bindungen einer Zone folgen dagegen
+// ihrer Position — Mute, Viewer und DirectAccess des Deck-Kanals zeigen also immer
+// auf den Kanal, auf den die Deck-Zone gerade geschoben ist.
 var inputZone = page.mHostAccess.mMixConsole.makeMixerBankZone('Eingaenge')
     .includeInputChannels()
 
@@ -476,16 +513,18 @@ var inputMuted = []
 var inputAccess = []
 
 /**
- * Je Platz: Titel, Mute-Zustand und ein DirectAccess-Objekt.
+ * Je Platz der Such-Zone: Titel, Mute-Zustand und ein DirectAccess-Objekt (für den
+ * Suchlauf auf einen anderen als den Deck-Kanal).
  *
  * Das Mute-Binding hält den Kanal mit einer echten Zuordnung lebendig und liefert
  * im Suchlauf eine Gegenprobe — Input 6 von Hand muten, der Lauf muss es zeigen.
  * Die Taste hängt an einer Note, die niemand sendet; sie verändert also nichts.
  * Callback am SurfaceValue, nicht am Binding (Lehre aus dem Meter der FaderBank).
  *
- * Auf Platz TARGET_INDEX hängt zusätzlich der Betrieb: Der Titel entscheidet über
- * bit5, der Parameter-Callback meldet die TONE3000-Regler, ein Objektwechsel
- * verwirft das gemerkte TONE3000.
+ * Ein geänderter Titel ist ein Anlass für die Deck-Suche: Eingänge wurden
+ * eingefügt, entfernt oder umbenannt. Keine Parameter-Callbacks hier — an allen
+ * Plätzen liefe jede Pegelbewegung ins Script (beim Meter der FaderBank war genau
+ * das der Verdacht, als Nuendo träge wurde). Sie hängen nur am Deck-Kanal.
  */
 function bindInput(index) {
     var channel = inputZone.makeMixerBankChannel()
@@ -494,13 +533,9 @@ function bindInput(index) {
     inputMuted.push(false)
 
     channel.mOnTitleChange = function (activeDevice, activeMapping, title) {
-        var changed = inputTitles[index] !== title
+        if (inputTitles[index] === title) return
         inputTitles[index] = title
-        if (index === TARGET_INDEX && changed) {
-            guarded(activeDevice, 'Titel Platz ' + index, function () {
-                sendFlagsAndSync(activeDevice)
-            })
-        }
+        seekReason = true
     }
 
     var button = surface.makeButton(index % 16, Math.floor(index / 16), 1, 1)
@@ -512,46 +547,89 @@ function bindInput(index) {
         inputMuted[index] = value > 0
     }
 
-    var access = page.mHostAccess.makeDirectAccess(channel)
-    if (index === WATCH_INDEX) {
-        // Beobachtung und Betrieb getrennt abgesichert: Wirft der eine, läuft der
-        // andere trotzdem, und keine Ausnahme verlässt den Callback.
-        access.mOnParameterChange = function (activeDevice, activeMapping, objectID, tag) {
-            guarded(activeDevice, 'Beobachtung', function () {
-                onWatchedChange(activeDevice, activeMapping, access, objectID, tag)
-            })
-            guarded(activeDevice, 'TONE3000-Rückmeldung', function () {
-                onDeckParameterChange(activeDevice, activeMapping, objectID, tag)
-            })
-            // Außerhalb des Tuner-Modus kostet der Tuner hier nichts: Der Tuner meldet
-            // beim Spielen rund zehnmal je Sekunde (Cent), auch wenn niemand hinsieht.
-            if (tunerMode) {
-                guarded(activeDevice, 'Tuner', function () {
-                    onTunerParameterChange(activeDevice, activeMapping, objectID, tag)
-                })
-            }
-        }
-        // Projekt gewechselt, Kanal neu belegt: gemerkte Objekt-IDs und Tags gelten
-        // nicht mehr. Neu aufgelöst und gemeldet wird, was sich wirklich geändert hat
-        // — sofort und beim nächsten Bedarf noch einmal (refreshT3k, refreshTuner).
-        access.mOnObjectChange = function (activeDevice, activeMapping, objectID) {
-            guarded(activeDevice, 'Objektwechsel', function () {
-                refreshT3k(activeDevice)
-            })
-            guarded(activeDevice, 'Tuner-Objektwechsel', function () {
-                refreshTuner(activeDevice)
-            })
-        }
-        // Verschwindet ein Objekt (etwa TONE3000 aus Slot 3), nur vergessen; aufgelöst
-        // wird beim nächsten Bedarf, gemeldet über den Titel des Slots.
-        access.mOnObjectWillBeRemoved = function (activeDevice, activeMapping, objectID) {
-            if (t3k && t3k.objectID === objectID) t3k = null
-            if (tuner && tuner.objectID === objectID) tuner = null
-        }
-    }
-    inputAccess.push(access)
+    inputAccess.push(page.mHostAccess.makeDirectAccess(channel))
 }
 for (var i = 0; i < NUM_INPUTS; i++) bindInput(i)
+
+//------------------------------------------------------------------------------
+// Deck-Kanal
+//------------------------------------------------------------------------------
+// Eine Zone mit genau einem Platz. Ihr Kanal trägt alle Bindungen des Betriebs:
+// Mute (Kanal 3 Note 0), die Viewer der Slots 1–3 (weiter unten) und ein eigenes
+// DirectAccess-Objekt mit den Callbacks für TONE3000, Tuner und Beobachtung.
+var deckZone = page.mHostAccess.mMixConsole.makeMixerBankZone('Tone3000 Ziel')
+    .includeInputChannels()
+var deckChannel = deckZone.makeMixerBankChannel()
+var deckAccess = page.mHostAccess.makeDirectAccess(deckChannel)
+// Titel laut mOnTitleChange. bit5 heißt: er ist TARGET_TITLE.
+var deckTitle = ''
+
+/**
+ * Der Titel entscheidet über bit5. Verlässt der Deck-Kanal TARGET_TITLE (Kanal
+ * davor eingefügt oder entfernt, Ziel umbenannt), ist das ein Anlass für die
+ * Deck-Suche — nur dieser Übergang. Titel, die die Suche beim Schieben selbst
+ * auslöst, führen nie vom Ziel weg (sie schiebt nur, solange es nicht stimmt);
+ * so stößt sie sich nicht selbst wieder an.
+ *
+ * Während der Suche wird nur gemerkt: Ihr Ende meldet den neuen Stand.
+ */
+deckChannel.mOnTitleChange = function (activeDevice, activeMapping, title) {
+    var previous = deckTitle
+    if (previous === title) return
+    deckTitle = title
+    if (previous === TARGET_TITLE) seekReason = true
+    if (seekBusy()) return
+    guarded(activeDevice, 'Titel Deck-Kanal', function () {
+        sendFlagsAndSync(activeDevice)
+    })
+}
+
+// Beobachtung und Betrieb getrennt abgesichert: Wirft der eine, läuft der andere
+// trotzdem, und keine Ausnahme verlässt den Callback.
+deckAccess.mOnParameterChange = function (activeDevice, activeMapping, objectID, tag) {
+    guarded(activeDevice, 'Beobachtung', function () {
+        onWatchedChange(activeDevice, activeMapping, deckAccess, objectID, tag)
+    })
+    // Mitten in der Deck-Suche zeigt der Deck-Kanal womöglich einen fremden Kanal;
+    // ihr Ende liest TONE3000 und Tuner ohnehin frisch.
+    if (seekBusy()) return
+    guarded(activeDevice, 'TONE3000-Rückmeldung', function () {
+        onDeckParameterChange(activeDevice, activeMapping, objectID, tag)
+    })
+    // Außerhalb des Tuner-Modus kostet der Tuner hier nichts: Der Tuner meldet
+    // beim Spielen rund zehnmal je Sekunde (Cent), auch wenn niemand hinsieht.
+    if (tunerMode) {
+        guarded(activeDevice, 'Tuner', function () {
+            onTunerParameterChange(activeDevice, activeMapping, objectID, tag)
+        })
+    }
+}
+
+// Projekt gewechselt, Kanal neu belegt, Deck-Zone verschoben: gemerkte Objekt-IDs
+// und Tags gelten nicht mehr. Neu aufgelöst und gemeldet wird, was sich wirklich
+// geändert hat — sofort und beim nächsten Bedarf noch einmal (refreshT3k,
+// refreshTuner). Die Deck-Suche löst selbst Objektwechsel aus (mResetBank meldet
+// sie sogar ohne Bewegung, FaderBank POLL_RESET_BANK); während sie läuft, wird nur
+// vergessen, aufgelöst wird an ihrem Ende.
+deckAccess.mOnObjectChange = function (activeDevice, activeMapping, objectID) {
+    if (seekBusy()) {
+        forgetDeckObjects()
+        return
+    }
+    guarded(activeDevice, 'Objektwechsel', function () {
+        refreshT3k(activeDevice)
+    })
+    guarded(activeDevice, 'Tuner-Objektwechsel', function () {
+        refreshTuner(activeDevice)
+    })
+}
+
+// Verschwindet ein Objekt (etwa TONE3000 aus Slot 3), nur vergessen; aufgelöst
+// wird beim nächsten Bedarf, gemeldet über den Titel des Slots.
+deckAccess.mOnObjectWillBeRemoved = function (activeDevice, activeMapping, objectID) {
+    if (t3k && t3k.objectID === objectID) t3k = null
+    if (tuner && tuner.objectID === objectID) tuner = null
+}
 
 //------------------------------------------------------------------------------
 // Preset-Befehle
@@ -639,16 +717,39 @@ function findChildByType(activeMapping, access, parentID, typeName) {
     return -1
 }
 
+/**
+ * Zielkanal des Suchlaufs, ohne Groß/klein: { access, index, byName, deck }. Heißt
+ * der Deck-Kanal so, läuft der Suchlauf über dessen DirectAccess — dort hängt der
+ * Parameter-Callback, also auch die Beobachtung, und die Objekt-IDs stammen aus
+ * demselben Objekt, das später meldet. index ist der Platz in der Such-Zone, -1
+ * jenseits davon. Sonst ein Platz der Such-Zone; ohne Treffer der Deck-Kanal als
+ * Rückfall.
+ */
 function findTarget(title) {
     var wanted = title.toLowerCase()
+    var index = -1
     for (var i = 0; i < NUM_INPUTS; i++) {
-        if (String(inputTitles[i] || '').toLowerCase() === wanted) return { index: i, byName: true }
+        if (String(inputTitles[i] || '').toLowerCase() === wanted) {
+            index = i
+            break
+        }
     }
-    return { index: TARGET_FALLBACK_INDEX, byName: false }
+    if (String(deckTitle || '').toLowerCase() === wanted) {
+        return { access: deckAccess, index: index, byName: true, deck: true }
+    }
+    if (index >= 0) return { access: inputAccess[index], index: index, byName: true, deck: false }
+    return { access: deckAccess, index: -1, byName: false, deck: true }
 }
 
-// Was der letzte Suchlauf gefunden hat: Platz, Kanal-ID und die Objekte, deren
-// Änderungen die Beobachtung meldet (Inserts, Slots, Plugins samt Unterobjekten).
+function describeTarget(target, title) {
+    if (!target.byName) return 'Deck-Kanal "' + show(deckTitle) + '" (RÜCKFALL: "' + title + '" nicht gefunden)'
+    if (target.index < 0) return 'Deck-Kanal "' + show(deckTitle) + '" (per Name, nicht unter den ' + NUM_INPUTS + ' Plätzen)'
+    return 'Platz ' + target.index + ' "' + show(inputTitles[target.index]) + '" (per Name' + (target.deck ? ', Deck-Kanal)' : ')')
+}
+
+// Was der letzte Suchlauf gefunden hat: DirectAccess-Objekt, Platz, ob es der
+// Deck-Kanal war, Kanal-ID und die Objekte, deren Änderungen die Beobachtung meldet
+// (Inserts, Slots, Plugins samt Unterobjekten).
 var lastProbe = null
 
 function watchObject(objectID, label) {
@@ -840,14 +941,15 @@ function runProbe(activeDevice, activeMapping, title) {
         line(activeDevice, 'Eingang ' + i + ': "' + inputTitles[i] + '" mute=' + (inputMuted[i] ? 1 : 0))
     }
     line(activeDevice, used + ' von ' + NUM_INPUTS + ' Plätzen belegt')
+    line(activeDevice, 'Deck-Kanal: "' + deckTitle + '" (bit5=' + (targetOk() ? 1 : 0) + '), Deck-Suche: ' +
+        seekStatus + ', ' + seekActions + ' Zonen-Aktionen seit dem Laden')
 
     var target = findTarget(title)
-    line(activeDevice, 'Ziel: Platz ' + target.index + ' "' + show(inputTitles[target.index]) + '" ' +
-        (target.byName ? '(per Name)' : '(RÜCKFALL: "' + title + '" nicht gefunden)'))
+    line(activeDevice, 'Ziel: ' + describeTarget(target, title))
 
-    var access = inputAccess[target.index]
+    var access = target.access
     var baseID = access.getBaseObjectID(activeMapping)
-    lastProbe = { index: target.index, baseID: baseID, objects: {} }
+    lastProbe = { access: access, index: target.index, deck: target.deck, baseID: baseID, objects: {} }
     line(activeDevice, 'DA Basis id=' + baseID + ' typ=' + access.getObjectTypeName(activeMapping, baseID) +
         ' titel="' + access.getObjectTitle(activeMapping, baseID) +
         '" mixerIndex=' + access.getMixerChannelIndex(activeMapping, baseID) +
@@ -956,13 +1058,29 @@ function onWatchedChange(activeDevice, activeMapping, access, objectID, tag) {
     line(activeDevice, 'ÄNDERUNG ' + label + ' tag=' + tag + ' "' + entry.title + '" = "' + entry.shown + '" roh ' + num(raw))
 }
 
+/**
+ * Die Beobachtung hängt am Parameter-Callback des Deck-Kanals; sie geht also nur,
+ * wenn der Suchlauf den Deck-Kanal traf, und nur, solange die Deck-Zone seitdem
+ * nicht weitergezogen ist (sonst meldet der Callback einen anderen Kanal).
+ */
 function startWatch(activeDevice) {
     if (!lastProbe) {
         line(activeDevice, 'Beobachtung nicht möglich: erst einen Suchlauf ausführen')
         return
     }
-    if (lastProbe.index !== WATCH_INDEX) {
-        line(activeDevice, 'Beobachtung nur auf Platz ' + WATCH_INDEX + ' möglich, der Suchlauf traf Platz ' + lastProbe.index)
+    if (!lastProbe.deck) {
+        line(activeDevice, 'Beobachtung nur auf dem Deck-Kanal ("' + deckTitle + '") möglich, der Suchlauf traf Platz ' + lastProbe.index)
+        return
+    }
+    var nowID = -1
+    try {
+        nowID = deckAccess.getBaseObjectID(currentMapping)
+    } catch (e) {
+        console.log('Beobachtung: Deck-Kanal nicht lesbar (' + e + ')')
+    }
+    if (nowID !== lastProbe.baseID) {
+        line(activeDevice, 'Beobachtung nicht möglich: Der Deck-Kanal zeigt seit dem Suchlauf einen anderen Kanal (id=' +
+            nowID + ' statt ' + lastProbe.baseID + '), erst neu suchen')
         return
     }
     watch = { params: {}, order: [], lines: 0, capped: false, round: 0 }
@@ -1008,7 +1126,7 @@ function resolveSetTarget(activeMapping, target) {
     var wantSlot = !!m[2]
     if (!lastProbe) return { error: 'erst einen Suchlauf ausführen (Zielkanal unbekannt)' }
 
-    var access = inputAccess[lastProbe.index]
+    var access = lastProbe.access
     var baseID = access.getBaseObjectID(activeMapping)
     var insertsID = findChildByType(activeMapping, access, baseID, 'Inserts')
     if (insertsID < 0) return { error: 'kein Unterobjekt "Inserts" am Kanal id=' + baseID }
@@ -1156,16 +1274,18 @@ function runCommand(activeDevice, activeMapping, payload) {
 //------------------------------------------------------------------------------
 // Betrieb fürs Stream Deck (Protokoll 3)
 //------------------------------------------------------------------------------
-// Alles hängt fest an Platz TARGET_INDEX der Eingangszone: Bindungen entstehen
-// beim Laden, ein Suchen per Name gibt es da noch nicht. Ob der Platz wirklich
-// Input 6 ist, sagt sein Titel — gemeldet als bit5; Regler und Presets wirken nur,
-// wenn er stimmt. Mute und die Slot-Tasten hängen an Value-Bindings und wirken
-// immer, ihr Zustand steht in bit0..bit4.
+// Alles hängt am Deck-Kanal (Abschnitt "Deck-Kanal"), den die Deck-Suche auf
+// TARGET_TITLE schiebt. Ob er dort steht, sagt sein Titel — gemeldet als bit5;
+// Regler und Presets wirken nur, wenn er stimmt. Mute und die Slot-Tasten hängen
+// an Value-Bindings und wirken immer, auf den Kanal, auf dem die Deck-Zone gerade
+// steht; ihr Zustand steht in bit0..bit4.
 //
 // Unverlangt gesendet wird nur, was ein Callback des Hosts als Änderung meldet,
 // und nur nach der Aktivierung (deckLive): Vorher fehlt das activeMapping, ohne
 // das bit6 nicht zu bestimmen ist. Bis dahin werden Zustände nur gemerkt; das Deck
-// holt sie mit der Abfrage 0x10.
+// holt sie mit der Abfrage 0x10. Dazu das Ende einer Deck-Suche, die den Kanal
+// verschoben hat: Es meldet den neuen Stand (reportDeck), während der Suche selbst
+// merken die Callbacks des Deck-Kanals nur.
 //
 // Der Dedup-Stand (last...Sent) soll genau spiegeln, was das Deck hat: Was nicht
 // gesendet werden kann (kein TONE3000, Lesefehler), setzt ihn zurück, ebenso ein
@@ -1232,9 +1352,9 @@ function toValue14(normalized) {
     return Math.round(normalized * VALUE_MAX)
 }
 
-/** bit5: Platz TARGET_INDEX heißt so, wie Input 6 in der MixConsole heißt. */
+/** bit5: Der Deck-Kanal heißt so, wie Input 6 in der MixConsole heißt. */
 function targetOk() {
-    return inputTitles[TARGET_INDEX] === TARGET_TITLE
+    return deckTitle === TARGET_TITLE
 }
 
 //--- TONE3000 auflösen ---------------------------------------------------------
@@ -1287,7 +1407,7 @@ function pluginInSlot(activeMapping, access, slot) {
 function resolveT3k(activeMapping) {
     var previous = t3k
     t3k = null
-    var access = inputAccess[TARGET_INDEX]
+    var access = deckAccess
     var result = { found: false, objectID: -1, tags: [null, null, null, null], program: null, foreign: {} }
 
     var pluginID = pluginInSlot(activeMapping, access, SLOT_T3K)
@@ -1353,7 +1473,7 @@ function lookupT3k(activeMapping, recheckMissing) {
     if (t3k && t3k.found) {
         var stillThere = false
         try {
-            stillThere = isT3kTitle(inputAccess[TARGET_INDEX].getObjectTitle(activeMapping, t3k.objectID))
+            stillThere = isT3kTitle(deckAccess.getObjectTitle(activeMapping, t3k.objectID))
         } catch (e) {
             console.log('TONE3000: gemerktes Objekt ' + t3k.objectID + ' nicht lesbar (' + e + ')')
         }
@@ -1415,7 +1535,7 @@ function sendParam(activeDevice, activeMapping, t, p, force) {
         return
     }
     var tag = t.tags[p]
-    var access = inputAccess[TARGET_INDEX]
+    var access = deckAccess
     var value = toValue14(access.getParameterProcessValue(activeMapping, t.objectID, tag))
     if (value < 0) {
         lastParamSent[p] = null
@@ -1437,7 +1557,7 @@ function sendParam(activeDevice, activeMapping, t, p, force) {
 function sendPreset(activeDevice, activeMapping, t, force) {
     var name = ''
     if (t && t.found && t.program !== null) {
-        name = hostText(inputAccess[TARGET_INDEX].getParameterDisplayValue(activeMapping, t.objectID, t.program))
+        name = hostText(deckAccess.getParameterDisplayValue(activeMapping, t.objectID, t.program))
     }
     if (!force && lastPresetSent === name) return false
     lastPresetSent = name
@@ -1533,7 +1653,7 @@ function refreshT3k(activeDevice) {
 
 //--- Rückmeldung aus dem Host ------------------------------------------------------
 /**
- * Hängt am Parameter-Callback von Platz TARGET_INDEX, neben der Beobachtung.
+ * Hängt am Parameter-Callback des Deck-Kanals, neben der Beobachtung.
  * Meldet die vier Regler als 0x20 und das Preset als 0x21, beides mit Dedup.
  *
  * Auf "Program" ist kein Verlass: Im Suchlauf 2026-10-01 setzte das Script ihn
@@ -1575,7 +1695,7 @@ function onDeckParameterChange(activeDevice, activeMapping, objectID, tag) {
 function checkForeignObject(activeDevice, activeMapping, t, objectID) {
     if (t.foreign[objectID]) return
     t.foreign[objectID] = true
-    if (!isT3kTitle(inputAccess[TARGET_INDEX].getObjectTitle(activeMapping, objectID))) return
+    if (!isT3kTitle(deckAccess.getObjectTitle(activeMapping, objectID))) return
     var fresh = resolveT3k(activeMapping)
     fresh.foreign[objectID] = fresh.objectID !== objectID
     if (fresh.objectID !== objectID) return
@@ -1583,20 +1703,22 @@ function checkForeignObject(activeDevice, activeMapping, t, objectID) {
 }
 
 //--- Slots und Tasten ------------------------------------------------------------
-// Je Slot ein Viewer auf Platz TARGET_INDEX wie bindInsertSlot der FaderBank: Den
+// Je Slot ein Viewer am Deck-Kanal wie bindInsertSlot der FaderBank: Den
 // Plugin-Namen liefert der Titel der Parameter-Bank-Zone (der Identitäts-Callback
-// schweigt, FaderBank E-29), ein Parameterwert der Zone hält sie lebendig.
+// schweigt, FaderBank E-29), ein Parameterwert der Zone hält sie lebendig. Die
+// Viewer folgen der Deck-Zone von selbst; während der Deck-Suche wird ihr Titel nur
+// gemerkt, ihr Ende meldet ihn (reportDeck).
 var deckViewers = []
 
 function bindDeckSlot(slot) {
-    var viewer = inputs[TARGET_INDEX].mInsertAndStripEffects
+    var viewer = deckChannel.mInsertAndStripEffects
         .makeInsertEffectViewer('deckSlot' + slot)
         .accessSlotAtIndex(slot)
     viewer.mParameterBankZone.makeParameterValue()
     viewer.mParameterBankZone.mOnTitleChange = function (activeDevice, activeMapping, title) {
         var changed = slotNames[slot] !== title
         slotNames[slot] = title
-        if (!changed) return
+        if (!changed || seekBusy()) return
         guarded(activeDevice, 'Slot ' + (slot + 1), function () {
             if (!deckLive()) return
             sendSlotName(activeDevice, slot, false)
@@ -1614,7 +1736,9 @@ for (var ds = 0; ds < DECK_SLOTS; ds++) bindDeckSlot(ds)
  * Eine Taste auf MIDI-Kanal 3 an einem Hostwert. Wie Solo und Select der FaderBank:
  * kein setTypeToggle, das Deck schickt den Zielzustand als Velocity (127 an, 0 aus)
  * und kein Note Off hinterher. Der Callback hängt am SurfaceValue, nicht am
- * Binding; er meldet auch Änderungen, die in Nuendo von Hand passieren.
+ * Binding; er meldet auch Änderungen, die in Nuendo von Hand passieren — und die
+ * Werte des neuen Kanals, wenn die Deck-Zone weiterzieht (während der Deck-Suche
+ * nur gemerkt, ihr Ende meldet das Zustandsbyte).
  */
 function bindDeckButton(note, hostValue) {
     var button = surface.makeButton(note, DECK_ROW, 1, 1)
@@ -1624,13 +1748,15 @@ function bindDeckButton(note, hostValue) {
     page.makeValueBinding(button.mSurfaceValue, hostValue)
     button.mSurfaceValue.mOnProcessValueChange = function (activeDevice, value) {
         deckOn[note] = value > 0
+        if (seekBusy()) return
         guarded(activeDevice, 'Taste ' + note, function () {
             sendFlagsAndSync(activeDevice)
         })
     }
 }
-// Mute zusätzlich zur Kanal-1-Taste aus bindInput; beide hängen am selben Hostwert.
-bindDeckButton(NOTE_MUTE, inputs[TARGET_INDEX].mValue.mMute)
+// Mute zusätzlich zur Kanal-1-Taste aus bindInput: Steht die Deck-Zone auf dem
+// Kanal von Platz n der Such-Zone, hängen beide am selben Hostwert.
+bindDeckButton(NOTE_MUTE, deckChannel.mValue.mMute)
 bindDeckButton(NOTE_TUNER_EDIT, deckViewers[SLOT_TUNER].mEdit)
 bindDeckButton(NOTE_DELAY_BYPASS, deckViewers[SLOT_DELAY].mBypass)
 bindDeckButton(NOTE_DELAY_EDIT, deckViewers[SLOT_DELAY].mEdit)
@@ -1647,19 +1773,21 @@ function reject(activeDevice, text) {
 /** Grund, warum Regler und Presets gerade nicht wirken dürfen, sonst ''. */
 function deckBlocked() {
     if (!currentMapping) return 'noch kein activeMapping (Seite nie aktiviert)'
-    if (!targetOk()) {
-        return 'Platz ' + TARGET_INDEX + ' heißt "' + hostText(inputTitles[TARGET_INDEX]) + '", nicht "' + TARGET_TITLE + '"'
-    }
+    if (!targetOk()) return 'Deck-Kanal heißt "' + hostText(deckTitle) + '", nicht "' + TARGET_TITLE + '"'
     return ''
 }
 
 /**
  * 0x10: alles ohne Dedup, in fester Reihenfolge. Jedes Frame einzeln abgesichert,
  * damit ein Fehler beim Lesen eines Reglers die übrige Antwort nicht verhindert.
+ *
+ * Vor der Aktivierung und bis der Deck-Kanal das erste Mal positioniert ist
+ * (deckReady), wird sie nur gemerkt: Eine Antwort davor zeigte den Kanal, auf dem
+ * die Deck-Zone beim Laden steht (Platz 0), nicht Input 6.
  */
 function runQuery(activeDevice) {
-    if (!currentMapping) {
-        if (!queryPending) line(activeDevice, 'ABFRAGE vor der Aktivierung: Antwort folgt mit der Aktivierung')
+    if (!currentMapping || !deckReady) {
+        if (!currentMapping && !queryPending) line(activeDevice, 'ABFRAGE vor der Aktivierung: Antwort folgt mit der Aktivierung')
         queryPending = true
         return
     }
@@ -1743,7 +1871,7 @@ function runParamSet(activeDevice, message) {
         if (!t.found) return 'kein TONE3000 in Slot ' + (SLOT_T3K + 1)
         if (t.tags[p] === null) return 'Titel "' + T3K_PARAMS[p].title + '" nicht gefunden'
         lastParamSent[p] = null
-        inputAccess[TARGET_INDEX].setParameterProcessValue(currentMapping, t.objectID, t.tags[p], normalized)
+        deckAccess.setParameterProcessValue(currentMapping, t.objectID, t.tags[p], normalized)
         return ''
     })
     if (problem) {
@@ -1784,7 +1912,7 @@ function runPresetSet(activeDevice, message) {
         line(activeDevice, 'Preset ' + name + ' abgelehnt: ' + blocked)
         return
     }
-    var access = inputAccess[TARGET_INDEX]
+    var access = deckAccess
     var t = null
     var before = ''
     problem = retryOnce(function () {
@@ -1912,7 +2040,7 @@ function findTunerTags(activeMapping, access, objectID) {
 function resolveTuner(activeMapping) {
     var previous = tuner
     tuner = null
-    var access = inputAccess[TARGET_INDEX]
+    var access = deckAccess
     var result = { found: false, objectID: -1, tags: {}, relevant: {}, foreign: {} }
     var pluginID = pluginInSlot(activeMapping, access, SLOT_TUNER)
     if (pluginID >= 0 && isSteinbergTuner(activeMapping, access, pluginID)) {
@@ -1943,7 +2071,7 @@ function retryTuner(fn) {
 //--- Lesen und senden --------------------------------------------------------------
 function tunerSwitch(mapping, t, key) {
     if (t.tags[key] === null) return false
-    return inputAccess[TARGET_INDEX].getParameterProcessValue(mapping, t.objectID, t.tags[key]) >= 0.5
+    return deckAccess.getParameterProcessValue(mapping, t.objectID, t.tags[key]) >= 0.5
 }
 
 /** Erste Zahl im Text ("-16", "+3", "12 ct"); NaN, wenn keine. */
@@ -1969,7 +2097,7 @@ function tunerData(mapping, t) {
     var oct = 0
     var note = ''
     if (t && t.found) {
-        var access = inputAccess[TARGET_INDEX]
+        var access = deckAccess
         flags |= TUNER_FOUND
         if (tunerSwitch(mapping, t, 'locked')) flags |= TUNER_LOCKED
         if (tunerSwitch(mapping, t, 'inTune')) flags |= TUNER_IN_TUNE
@@ -2008,7 +2136,7 @@ function sendTuner(activeDevice, mapping, t, force) {
  * schon stimmt. Liefert true, wenn gesetzt wurde.
  */
 function applyTunerMute(mapping, objectID, tag, on) {
-    var access = inputAccess[TARGET_INDEX]
+    var access = deckAccess
     if ((access.getParameterProcessValue(mapping, objectID, tag) >= 0.5) === on) return false
     tunerApplying = true
     try {
@@ -2051,7 +2179,7 @@ function releaseTunerMute(mapping, t) {
  * Konsole: Das Objekt kann längst entfernt sein.
  */
 function releaseOtherTuner(mapping, objectID) {
-    var access = inputAccess[TARGET_INDEX]
+    var access = deckAccess
     try {
         if (!isSteinbergTuner(mapping, access, objectID)) return
         var param = findParamByTitle(mapping, access, objectID, tunerTitle('mute'))
@@ -2062,7 +2190,11 @@ function releaseOtherTuner(mapping, objectID) {
 }
 
 //--- Aufträge und Meldungen -----------------------------------------------------------
-/** 0x13: genau F0 7D 13 <m> F7 mit m = 0 oder 1. */
+/**
+ * 0x13: genau F0 7D 13 <m> F7 mit m = 0 oder 1. Wie die Abfrage bis zur ersten
+ * Positionierung des Deck-Kanals nur gemerkt — sonst hübe ein 0x13 0 beim Start
+ * die Mute am Tuner des falschen Kanals auf.
+ */
 function runTunerMode(activeDevice, message) {
     if (message.length !== 5 || message[4] !== 0xF7) {
         line(activeDevice, 'TUNER abgelehnt: Frame mit ' + message.length + ' Byte, erwartet F0 7D 13 <m> F7')
@@ -2073,8 +2205,8 @@ function runTunerMode(activeDevice, message) {
         line(activeDevice, 'TUNER abgelehnt: Modus ' + m + ' unbekannt (0 aus, 1 an)')
         return
     }
-    if (!currentMapping) {
-        if (tunerModePending < 0) line(activeDevice, 'TUNER vor der Aktivierung: Modus folgt mit der Aktivierung')
+    if (!currentMapping || !deckReady) {
+        if (!currentMapping && tunerModePending < 0) line(activeDevice, 'TUNER vor der Aktivierung: Modus folgt mit der Aktivierung')
         tunerModePending = m
         return
     }
@@ -2121,7 +2253,7 @@ function queryTuner(activeDevice) {
 }
 
 /**
- * Am Parameter-Callback von Platz TARGET_INDEX, nur im Modus (der Aufrufer prüft
+ * Am Parameter-Callback des Deck-Kanals, nur im Modus (der Aufrufer prüft
  * tunerMode schon vorher). Billig: Objekt-ID und Tag vergleichen, dann sechs
  * Lesezugriffe und Dedup. Meldungen anderer Objekte und irrelevanter Tags
  * (Frequency, Base) lesen nichts. Aufgelöst wird nur nach einer Verwerfung, einmal.
@@ -2154,7 +2286,7 @@ function onTunerParameterChange(activeDevice, activeMapping, objectID, tag) {
 function checkForeignTuner(activeDevice, mapping, t, objectID) {
     if (t.foreign[objectID]) return
     t.foreign[objectID] = true
-    if (!isSteinbergTuner(mapping, inputAccess[TARGET_INDEX], objectID)) return
+    if (!isSteinbergTuner(mapping, deckAccess, objectID)) return
     var fresh = resolveTuner(mapping)
     if (!fresh.found || fresh.objectID !== objectID) {
         fresh.foreign[objectID] = true
@@ -2181,6 +2313,347 @@ function refreshTuner(activeDevice) {
 }
 
 //------------------------------------------------------------------------------
+// Deck-Suche
+//------------------------------------------------------------------------------
+// Schiebt die Deck-Zone auf den Platz von TARGET_TITLE, wie die FaderBank ihre Bank
+// bewegt (E-19 dort): im Leerlauf — page.mOnIdle läuft im Host und bekommt ein
+// frisches activeMapping —, mit Zonen-Aktionen und einem Rundenbudget.
+//
+// Anlässe (seekReason): die Aktivierung, ein geänderter Titel in der Such-Zone
+// (Eingänge eingefügt, entfernt, umbenannt) und der Deck-Kanal, wenn er
+// TARGET_TITLE verlässt. Ohne Anlass kehrt der Leerlauf sofort zurück; mit Anlass
+// läuft höchstens alle SEEK_PASS_MS ein Durchgang:
+//   1. Heißt der Deck-Kanal schon TARGET_TITLE: fertig, nichts bewegt.
+//   2. Steht TARGET_TITLE auf Platz k der Such-Zone: mResetBank, dann k-mal
+//      mShiftRight (die Zone ist einen Platz breit, ein Schub ist also ein Platz
+//      wie mNextBank; mResetBank verrutscht als einziger Bankbefehl nicht am Rand,
+//      FaderBank). Danach bis zu SEEK_VERIFY_PASSES Durchgänge auf den Titel
+//      warten, sonst die nächste Runde, nach SEEK_MAX_ROUNDS aufgeben.
+//   3. Sonst, wenn alle NUM_INPUTS Plätze belegt sind (das Projekt hat womöglich
+//      mehr Eingänge), der Rückfall: auf Platz NUM_INPUTS springen und je
+//      Durchgang einen Platz weiter, bis der Titel stimmt oder sich nichts mehr
+//      bewegt — am Ende der Liste läuft der Schub ins Leere —, höchstens
+//      SEEK_MAX_STEPS Schritte.
+//   4. Sonst gibt es TARGET_TITLE nicht: aufgeben, ohne die Zone anzufassen.
+// Nach dem Ende, gefunden oder aufgegeben, ruht die Suche bis zum nächsten Anlass.
+// Ein neuer Anlass mitten in der Suche beginnt sie neu (SEEK_MAX_RESTARTS).
+//
+// Keine Dauer-Schieberei: Die Zonen-Aktionen lösen selbst Titel- und Objekt-
+// meldungen aus (mResetBank auch ohne Bewegung, FaderBank POLL_RESET_BANK), aber
+// keine davon ist ein Anlass. Die Such-Zone bewegt sich nie (Zonen sind unabhängig;
+// Steinbergs eigene Scripts banken eine Zone neben einer festen "Stereo Out"-Zone),
+// und der Deck-Kanal wird nur geschoben, solange er nicht TARGET_TITLE heißt — die
+// Suche führt ihn also nie vom Ziel weg, und nur dieser Übergang zählt beim
+// Deck-Kanal als Anlass. Hielte eine dieser Annahmen am Gerät nicht, begrenzen
+// SEEK_MAX_RESTARTS und die Runden jede einzelne Suche, und ihr Aufgeben schiebt nicht.
+//
+// "Angekommen" sagt der Titel aus mOnTitleChange oder, solange der noch aussteht,
+// der Titel des Basisobjekts per DirectAccess — er ist der Kanalname (Suchlauf
+// 2026-10-06: Basis "Mono In 6", Parameter 1024 "Name"); dann übernimmt das Script
+// ihn als Titel (seekEnd). Bewegung erkennt der Rückfall an der Objekt-ID des
+// Basisobjekts, also auch zwischen zwei gleichnamigen Kanälen; ein leerer Platz
+// meldet -1 (FaderBank E-19).
+//
+// Während der Suche merken die Callbacks des Deck-Kanals (Titel, Slots, Tasten,
+// Objektwechsel, Parameter) nur, und gemerkte TONE3000- und Tuner-Objekte gelten
+// nicht mehr. Hat sie den Kanal bewegt, meldet ihr Ende, was er jetzt zeigt
+// (reportDeck, mit Dedup) — das Deck fragt bei einem Wechsel von bit5 selbst nach.
+var SEEK_IDLE = 0
+var SEEK_VERIFY = 1
+var SEEK_STEP = 2
+
+var seekPhase = SEEK_IDLE
+var seekReason = false
+var seekRounds = 0
+var seekRestarts = 0
+var seekWait = 0
+var seekSteps = 0
+var seekMoved = false // in dieser Suche geschoben, ihr Ende meldet den neuen Stand
+var seekPlace = -1 // Platz, auf den zuletzt geschoben wurde
+var seekLastBase = -1 // Basisobjekt vor dem letzten Schub (Rückfall)
+var seekActions = 0 // Zonen-Aktionen seit dem Laden, für den Suchlauf
+var seekStatus = 'noch nicht gelaufen'
+var lastSeekPass = -1000000
+// Der Deck-Kanal war seit der Aktivierung einmal positioniert (oder die Suche gab
+// auf). Bis dahin warten Abfrage und Tuner-Modus vom Deck (runPending).
+var deckReady = false
+
+function seekBusy() {
+    return seekPhase !== SEEK_IDLE
+}
+
+/** Gemerktes TONE3000 und gemerkten Tuner vergessen; aufgelöst wird beim nächsten Bedarf. */
+function forgetDeckObjects() {
+    t3k = null
+    t3kRecheck = false
+    tuner = null
+    tunerRecheck = false
+}
+
+/** Erster Platz der Such-Zone mit TARGET_TITLE, sonst -1. */
+function inputPlace() {
+    for (var i = 0; i < NUM_INPUTS; i++) {
+        if (inputTitles[i] === TARGET_TITLE) return i
+    }
+    return -1
+}
+
+/** Alle Plätze der Such-Zone belegt: Dahinter kann es weitere Eingänge geben. */
+function inputsFull() {
+    for (var i = 0; i < NUM_INPUTS; i++) {
+        if (!inputTitles[i]) return false
+    }
+    return true
+}
+
+/**
+ * Basisobjekt des Deck-Kanals und sein Titel per DirectAccess: { base, title }; ein
+ * leerer Platz meldet -1 und ''. Wirft der Host, gilt der Stand als unbekannt
+ * (base wie vor dem letzten Schub, also "nicht bewegt").
+ */
+function deckHere(mapping) {
+    try {
+        var base = deckAccess.getBaseObjectID(mapping)
+        if (typeof base !== 'number' || base < 0) return { base: -1, title: '' }
+        return { base: base, title: hostText(deckAccess.getObjectTitle(mapping, base)) }
+    } catch (e) {
+        console.log('Deck: Basisobjekt nicht lesbar (' + e + ')')
+        return { base: seekLastBase, title: '' }
+    }
+}
+
+/**
+ * Die Deck-Zone auf Platz place: mResetBank, dann place-mal mShiftRight. Die Phase
+ * muss vorher stehen — die Callbacks können noch während der Aktionen kommen.
+ */
+function seekMoveTo(mapping, place) {
+    forgetDeckObjects()
+    seekMoved = true
+    seekPlace = place
+    seekLastBase = deckHere(mapping).base
+    deckZone.mAction.mResetBank.trigger(mapping)
+    for (var i = 0; i < place; i++) deckZone.mAction.mShiftRight.trigger(mapping)
+    seekActions += place + 1
+}
+
+/**
+ * Eine Runde: auf Platz place schieben (Such-Zone k, oder NUM_INPUTS für den
+ * Rückfall), dann prüfen. Liefert false, wenn die Runden aufgebraucht sind (die
+ * Suche ist dann beendet).
+ */
+function seekRound(activeDevice, mapping, phase, place) {
+    if (seekRounds <= 0) {
+        seekEnd(activeDevice, false, '"' + TARGET_TITLE + '" nach ' + SEEK_MAX_ROUNDS + ' Runden nicht erreicht (zuletzt Platz ' + seekPlace + ')')
+        return false
+    }
+    seekRounds--
+    seekPhase = phase
+    seekWait = phase === SEEK_STEP ? SEEK_STEP_WAIT : SEEK_VERIFY_PASSES
+    seekMoveTo(mapping, place)
+    return true
+}
+
+/**
+ * Ein Anlass: Stimmt der Deck-Kanal, fertig; sonst eine Runde zum Platz aus der
+ * Such-Zone oder der Rückfall. Mitten in einer Suche (die Eingänge ändern sich
+ * weiter) beginnt sie mit frischen Runden neu, aber höchstens SEEK_MAX_RESTARTS-mal:
+ * So bleibt jede Suche begrenzt, was auch immer sie anstößt, und das Aufgeben selbst
+ * schiebt nichts mehr, stößt also auch nichts mehr an.
+ */
+function seekStart(activeDevice, mapping) {
+    if (seekBusy()) {
+        seekRestarts++
+        if (seekRestarts > SEEK_MAX_RESTARTS) {
+            seekEnd(activeDevice, false, 'nach ' + SEEK_MAX_RESTARTS + ' neuen Anlässen in derselben Suche aufgegeben')
+            return
+        }
+    } else {
+        seekMoved = false
+        seekRestarts = 0
+        seekSteps = SEEK_MAX_STEPS
+    }
+    seekRounds = SEEK_MAX_ROUNDS
+    // Steht er schon dort, nichts bewegen — auch wenn sein Titel noch aussteht.
+    if (deckOnTarget(mapping)) {
+        seekEnd(activeDevice, true, 'Deck-Kanal heißt "' + TARGET_TITLE + '"')
+        return
+    }
+    var k = inputPlace()
+    if (k >= 0) {
+        seekRound(activeDevice, mapping, SEEK_VERIFY, k)
+        return
+    }
+    if (!inputsFull()) {
+        seekEnd(activeDevice, false, '"' + TARGET_TITLE + '" nicht unter den Eingängen')
+        return
+    }
+    // Der Rückfall kann dauern: Abfrage und Tuner-Modus vom Deck nicht so lange
+    // aufhalten. Findet er das Ziel, meldet sein Ende bit5, und das Deck fragt nach.
+    if (seekRound(activeDevice, mapping, SEEK_STEP, NUM_INPUTS)) makeDeckReady(activeDevice)
+}
+
+/** Nach einer Runde: angekommen? Sonst warten, dann die nächste Runde. */
+function seekVerify(activeDevice, mapping) {
+    if (deckOnTarget(mapping)) {
+        seekEnd(activeDevice, true, 'auf Platz ' + seekPlace + ' geschoben')
+        return
+    }
+    seekWait--
+    if (seekWait > 0) return
+    var k = inputPlace()
+    if (k < 0) {
+        seekEnd(activeDevice, false, '"' + TARGET_TITLE + '" während der Suche aus der Such-Zone verschwunden')
+        return
+    }
+    seekRound(activeDevice, mapping, SEEK_VERIFY, k)
+}
+
+/** Rückfall: je Durchgang prüfen und einen Platz weiter, bis Ziel oder Ende. */
+function seekStepOn(activeDevice, mapping) {
+    var here = deckHere(mapping)
+    if (deckTitle === TARGET_TITLE || here.title === TARGET_TITLE) {
+        seekEnd(activeDevice, true, 'Rückfall: auf Platz ' + seekPlace + ' gefunden, hinter der Such-Zone')
+        return
+    }
+    if (here.base === seekLastBase) {
+        // Nicht bewegt: am Ende der Liste, oder Nuendo ist noch nicht so weit.
+        seekWait--
+        if (seekWait > 0) return
+        seekEnd(activeDevice, false, 'Rückfall: "' + TARGET_TITLE + '" bis zum Ende der Eingänge nicht gefunden')
+        return
+    }
+    if (here.base < 0 || here.title === '') {
+        seekEnd(activeDevice, false, 'Rückfall: "' + TARGET_TITLE + '" nicht gefunden, Platz ' + seekPlace + ' leer')
+        return
+    }
+    seekSteps--
+    if (seekSteps <= 0) {
+        seekEnd(activeDevice, false, 'Rückfall: nach ' + SEEK_MAX_STEPS + ' Schritten aufgegeben')
+        return
+    }
+    seekLastBase = here.base
+    seekWait = SEEK_STEP_WAIT
+    seekPlace++
+    forgetDeckObjects()
+    deckZone.mAction.mShiftRight.trigger(mapping)
+    seekActions++
+}
+
+/** Angekommen: laut mOnTitleChange, oder laut Basisobjekt, solange der Titel aussteht. */
+function deckOnTarget(mapping) {
+    return deckTitle === TARGET_TITLE || deckHere(mapping).title === TARGET_TITLE
+}
+
+/**
+ * Ende der Suche, gefunden oder nicht; sie ruht bis zum nächsten Anlass.
+ *
+ * Gefunden, aber der Titel-Callback steht noch aus: Der Name des Basisobjekts gilt
+ * (wie die FaderBank Name und Farbe nach einem Wechsel per DirectAccess liest, weil
+ * die Callbacks nachhinken). Sonst bliebe bit5 auf 0, bis Nuendo den Titel meldet —
+ * oder für immer, falls es das beim Schieben nicht tut. Kommt er später, ist er
+ * derselbe und ändert nichts.
+ *
+ * Ausstehendes vom Deck zuerst (ohne Dedup), danach der Bericht über den neuen Kanal
+ * (mit Dedup, findet nach einer Abfrage also nichts Neues).
+ */
+function seekEnd(activeDevice, found, text) {
+    var moved = seekMoved
+    var adopted = found && deckTitle !== TARGET_TITLE
+    seekPhase = SEEK_IDLE
+    seekMoved = false
+    if (adopted) deckTitle = TARGET_TITLE
+    seekStatus = text + (adopted ? ' (Titel per DirectAccess)' : '')
+    console.log('Deck: ' + seekStatus + (found ? '' : ', bit5 bleibt 0'))
+    makeDeckReady(activeDevice)
+    if (moved) {
+        reportDeck(activeDevice)
+    } else if (adopted && deckLive()) {
+        guarded(activeDevice, 'Titel Deck-Kanal', function () {
+            sendFlagsAndSync(activeDevice)
+        })
+    }
+}
+
+/**
+ * Was der Deck-Kanal nach dem Schieben zeigt, mit Dedup: die Plugin-Namen der drei
+ * Slots, das Zustandsbyte mit TONE3000 (Regler, Preset) und im Tuner-Modus die
+ * Stimmanzeige. TONE3000 und Tuner werden dabei frisch aufgelöst — derselbe Weg wie
+ * nach einem Objektwechsel.
+ */
+function reportDeck(activeDevice) {
+    if (!deckLive()) return
+    for (var s = 0; s < DECK_SLOTS; s++) sendSlotName(activeDevice, s, false)
+    guarded(activeDevice, 'Deck-Kanal', function () {
+        refreshT3k(activeDevice)
+    })
+    guarded(activeDevice, 'Deck-Kanal Tuner', function () {
+        refreshTuner(activeDevice)
+    })
+}
+
+/** Der Deck-Kanal gilt als positioniert: Ausstehendes vom Deck jetzt beantworten. */
+function makeDeckReady(activeDevice) {
+    if (deckReady) return
+    deckReady = true
+    runPending(activeDevice)
+}
+
+/**
+ * Vor der Aktivierung oder vor der ersten Positionierung gemerkt: Tuner-Modus
+ * zuerst — das Deck schickt ihn beim Verbinden vor seiner Abfrage, und deren 0x24
+ * soll den neuen Stand zeigen —, dann die Abfrage.
+ */
+function runPending(activeDevice) {
+    if (tunerModePending >= 0) {
+        var wantTuner = tunerModePending === 1
+        guarded(activeDevice, 'TUNER', function () {
+            applyTunerMode(activeDevice, wantTuner)
+        })
+    }
+    if (queryPending) {
+        guarded(activeDevice, 'ABFRAGE', function () {
+            runQuery(activeDevice)
+        })
+    }
+}
+
+/** Ein Durchgang: neuer Anlass zuerst, sonst die laufende Phase weiter. */
+function seekPass(activeDevice, mapping) {
+    if (seekReason) {
+        seekReason = false
+        seekStart(activeDevice, mapping)
+    } else if (seekPhase === SEEK_VERIFY) {
+        seekVerify(activeDevice, mapping)
+    } else if (seekPhase === SEEK_STEP) {
+        seekStepOn(activeDevice, mapping)
+    }
+}
+
+/**
+ * Leerlauf des Hosts. Ohne Anlass und ohne laufende Suche kehrt er sofort zurück —
+ * er feuert sehr oft. Sonst gedrosselt auf SEEK_PASS_MS; performance.now() ist
+ * vorhanden (FaderBank, Behringers X-Touch-Script). Eine Ausnahme beendet die Suche,
+ * statt in jedem Durchgang neu zu werfen.
+ */
+page.mOnIdle = function (activeDevice, activeMapping) {
+    if (!currentMapping || (seekPhase === SEEK_IDLE && !seekReason)) return
+    var now = performance.now()
+    if (now - lastSeekPass < SEEK_PASS_MS) return
+    lastSeekPass = now
+    var mapping = activeMapping || currentMapping
+    var failed = true
+    guarded(activeDevice, 'Deck-Suche', function () {
+        seekPass(activeDevice, mapping)
+        failed = false
+    })
+    if (failed) {
+        guarded(activeDevice, 'Deck-Suche', function () {
+            seekEnd(activeDevice, false, 'nach einem Fehler aufgegeben')
+        })
+    }
+}
+
+//------------------------------------------------------------------------------
 // Aktivierung und Eingang
 //------------------------------------------------------------------------------
 // DirectAccess braucht ein activeMapping, das nur mOnActivate liefert; der
@@ -2189,9 +2662,11 @@ var currentMapping = null
 
 // Beim Aktivieren an sich wird nichts gesendet; Callbacks, die der Host mitten
 // darin auslöst, merken nur (activating). Ein gemerktes TONE3000 und ein gemerkter
-// Tuner gelten danach nicht mehr. Einzige Ausnahmen beim Senden: die Antwort auf
-// eine Abfrage und auf ein 0x13, die vor der ersten Aktivierung kamen und deshalb
-// noch ausstehen.
+// Tuner gelten danach nicht mehr, und die Deck-Suche prüft im nächsten Leerlauf, ob
+// der Deck-Kanal stimmt. Einzige Ausnahmen beim Senden: die Antwort auf eine
+// Abfrage und auf ein 0x13, die vor der Aktivierung kamen und deshalb noch
+// ausstehen — aber nur, wenn der Deck-Kanal schon richtig steht (etwa "Mono In 6"
+// als einziger Eingang, Platz 0). Sonst beantwortet sie das Ende der ersten Suche.
 //
 // Liefert Nuendo die Startwerte (Titel, Mute, Fenster) erst NACH mOnActivate über
 // die Callbacks, sind das Änderungen wie jede andere und gehen unverlangt hinaus.
@@ -2204,29 +2679,17 @@ page.mOnActivate = function (activeDevice, activeMapping) {
     currentMapping = activeMapping
     activating = true
     try {
+        deckAccess.activate(activeMapping)
         for (var i = 0; i < NUM_INPUTS; i++) inputAccess[i].activate(activeMapping)
     } catch (e) {
         console.log('Aktivierung Fehler: ' + e)
     } finally {
         activating = false
     }
-    t3k = null
-    t3kRecheck = false
-    tuner = null
-    tunerRecheck = false
-    // Vor der Aktivierung gemerkter Tuner-Modus zuerst: Das Deck schickt ihn beim
-    // Verbinden vor seiner Abfrage, und deren 0x24 soll den neuen Stand zeigen.
-    if (tunerModePending >= 0) {
-        var wantTuner = tunerModePending === 1
-        guarded(activeDevice, 'TUNER', function () {
-            applyTunerMode(activeDevice, wantTuner)
-        })
-    }
-    if (queryPending) {
-        guarded(activeDevice, 'ABFRAGE', function () {
-            runQuery(activeDevice)
-        })
-    }
+    forgetDeckObjects()
+    seekReason = true
+    if (deckTitle === TARGET_TITLE) deckReady = true
+    if (deckReady) runPending(activeDevice)
     console.log('TONE3000 Remote aktiv')
 }
 

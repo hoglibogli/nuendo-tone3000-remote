@@ -1,12 +1,32 @@
 # Befunde aus den Suchläufen
 
-Rohdaten in `suchlauf/`. Stand 2026-10-01, TONE3000 0.0.7, Nuendo 15.
+Rohdaten in `suchlauf/`. Stand 2026-10-01, TONE3000 0.0.7, Nuendo 15; Nachträge 2026-10-02
+(Tuner) und 2026-10-06 (Platz von Input 6).
 
 ## Input 6
 
 - In der MixConsole heißt er **„Mono In 6"**, Typ `InputChannel`. In einer reinen
-  Eingangszone (`includeInputChannels()`, ohne `setFollowVisibility`) liegt er auf
-  **Platz 6**; Platz 0 ist „Stereo In 1-2". Belegt über die Mute-Gegenprobe.
+  Eingangszone (`includeInputChannels()`, ohne `setFollowVisibility`) lag er im Projekt
+  vom 2026-10-01 auf **Platz 6**; Platz 0 ist „Stereo In 1-2". Belegt über die
+  Mute-Gegenprobe.
+- **2026-10-06: Der Platz gehört zum Projekt.** Im aktuellen Projekt gibt es nur einen
+  Eingangskanal, „Mono In 6", also auf **Platz 0** („1 von 32 Plätzen belegt",
+  `suchlauf/2026-10-06_114528.txt`; Basis id=2066, Slot 1 leer, Slot 2 H-Delay Mono,
+  Slot 3 TONE3000 auf „Matchless"). Das Script band fest an Platz 6: bit5 = 0, das Deck
+  zeigte „Kanal?". Seitdem folgt der Betrieb dem Namen über eine eigene Zone mit einem
+  Platz (`docs/protokoll.md` 4.7). Das Basisobjekt per DirectAccess trägt den Kanalnamen
+  (Titel „Mono In 6", Parameter 1024 „Name") — daran erkennt die Suche das Ziel, auch wenn
+  der Titel-Callback nachhinkt.
+- **2026-10-06, am Gerät bestätigt:** Nach dem Ausrollen stand „Mono In 6" in einem
+  Projekt auf **Platz 5**; die Deck-Suche schob die Ein-Platz-Zone mit `mResetBank` und
+  fünfmal `mShiftRight` dorthin — 6 Zonen-Aktionen seit dem Laden, danach Ruhe, bit5 = 1,
+  Deck in Betrieb (`suchlauf/2026-10-06_142037.txt`). Damit sind Zonen-Aktionen per
+  `trigger()` aus `page.mOnIdle` und die Unabhängigkeit der beiden Zonen am Gerät belegt.
+- Objekt-IDs: Die Rohdaten belegen nicht, dass zwei DirectAccess-Objekte dieselbe ID für
+  dasselbe Objekt liefern — jeder Lauf las über genau eines, und die IDs wechseln zwischen
+  Nuendo-Sitzungen (Basis 1881/1895/1917/…/2066). Die FaderBank vergleicht sie mit Erfolg
+  über verschiedene Kanalzüge (ihre E-19). Der Suchlauf liest den Zielkanal deshalb über
+  dasselbe DirectAccess-Objekt, an dem die Beobachtung hängt (den Deck-Kanal).
 - **Mute** lässt sich über `mValue.mMute` lesen (Value-Binding, Callback am
   SurfaceValue). DirectAccess führt ihn als Tag 1027 am Kanal.
 - In der Beobachtung tauchte kein Mute-Wechsel auf — ob er nicht umgeschaltet

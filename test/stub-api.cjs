@@ -6,17 +6,37 @@
  * wirft es — so fällt ein Tippfehler im API-Namen auf, statt still ins Leere zu laufen.
  *
  * Nachgebaut ist, was das Script braucht, mit dem Verhalten, das am Gerät belegt ist:
- *   - Eingangszone mit 32 Kanälen; Platz 6 trägt Input 6 samt Inserts (16 Slots):
+ *   - Eine Liste von Eingangskanälen wie in Nuendos Projekt (Vorgabe 32: "Stereo In 1-2",
+ *     "Mono In 1" … "Mono In 31"), zur Laufzeit änderbar: einfügen, entfernen, umbenennen
+ *     (insertInput, removeInput, renameInput/setInputTitle). Jeder Kanal hat eine feste
+ *     Kennung (key, Vorgabe "ch<n>"); Hostwerte heißen danach ("ch6.mute",
+ *     "ch6.slot1.bypass"), Slotnamen und DirectAccess-Basis hängen daran.
+ *   - Kanal "ch6" ("Mono In 6", Basis 100) trägt Input 6 samt Inserts (16 Slots):
  *     Slot 1 Steinbergs "Tuner" (12 Parameter wie im Suchlauf 2026-10-02_125415, Klassen-
  *     kennung "6B9B08D2…-0"), Slot 2 "H-Delay Mono", Slot 3 "TONE3000" (2125 Parameter,
  *     "Program" auf Index 44, dahinter 2080 "MIDI CC"-Platzhalter, Tags wie am Gerät).
+ *     Die übrigen Kanäle haben nur ein Basisobjekt (ch<n>: 1000 + n, sonst ab 2000).
+ *   - MixerBankZones beliebiger Breite über diese Liste, je mit Position. Zonen-Aktionen
+ *     (mResetBank, mNextBank, mPrevBank, mShiftLeft, mShiftRight; trigger(mapping)) schieben
+ *     sie; am Rand läuft ein Schub ins Leere (mShiftRight/mNextBank, solange der letzte Kanal
+ *     der Liste nicht im Bild ist). Alles an einem Zonen-Kanal folgt seiner Position: Titel
+ *     (mOnTitleChange bei Änderung), Value-Bindings (der Surface-Wert bekommt den Wert des
+ *     neuen Kanals), Insert-Viewer (Titel der Parameter-Bank-Zone = Slotname des neuen
+ *     Kanals), DirectAccess (Basis = neuer Kanal, -1 auf einem leeren Platz; mOnObjectChange).
+ *     Wie in Nuendo (FaderBank POLL_RESET_BANK) meldet jede Zonen-Aktion Objektwechsel und
+ *     Titel an allen Kanälen der Zone, auch ohne Bewegung (zoneEcho, abschaltbar).
+ *     zoneDelivery: "danach" (Vorgabe) stellt diese Meldungen erst zu, wenn mOnIdle
+ *     zurückgekehrt ist; "sofort" mitten in trigger(). zoneBroken: Aktionen bewegen nichts.
+ *   - page.mOnIdle mit simulierter Zeit: idle()/settle() rufen ihn auf, performance.now()
+ *     liefert dabei host.clock.
  *   - Der Tuner misst auf Bestellung (tunerInput): Er setzt alle Messwerte eines Durchgangs
  *     und meldet danach jeden geänderten Parameter in der Reihenfolge vom Gerät (Cent, Oct,
  *     Note, Locked, Frequency, In Tune). Klartexte wie am Gerät: Note "E " mit Leerzeichen,
  *     Stille "--", Oct bei Stille leer. Ob er Werte meldet, die das Script setzt (Mute),
  *     ist am Gerät ungeprüft; wie bei TONE3000 nur mit ownSetsNotify.
- *   - DirectAccess je Kanal; mOnParameterChange meldet nur Objekte UNTER dem Kanal
- *     (Kanalparameter wie Mute meldet Nuendo dort nicht, FaderBank E-25).
+ *   - DirectAccess je Zonen-Kanal; mOnParameterChange meldet nur Objekte UNTER dem Kanal
+ *     (Kanalparameter wie Mute meldet Nuendo dort nicht, FaderBank E-25). Objekt-IDs sind
+ *     host-weit gleich, gleich über welches DirectAccess-Objekt gelesen.
  *   - "Program" meldet sich selbst nicht; ein Presetwechsel meldet alle übrigen echten
  *     Parameter einmal (Suchlauf 2026-10-01). Ein Druck auf das aktive Preset lädt nicht neu.
  *   - Ein Plugin meldet Werte, die das Script per DirectAccess setzt, NICHT zurück: JUCE
@@ -29,7 +49,8 @@
  *   - Entfernte Objekte: getObjectTitle liefert "", jeder andere Zugriff wirft.
  *
  * Aufgezeichnet wird alles, was die Tests prüfen: gesendete Frames, Bindungen, Tasten,
- * Viewer, Host-Aktionen (log), Ausnahmen, die einen Callback verlassen (callbackErrors).
+ * Viewer, Host-Aktionen (log), Zonen-Aktionen (zoneActions), Ausnahmen, die einen
+ * Callback verlassen (callbackErrors).
  */
 "use strict";
 
@@ -122,6 +143,11 @@ function param(tag, title, o = {}) {
  *   programNotifies  true: auch "Program" meldet einen Callback (am Gerät: nein)
  *   ownSetsNotify    true: ein Plugin meldet auch Werte, die das Script per DirectAccess setzt
  *                    (Vorgabe false, gerätenah; für die Regler am Gerät ungeprüft)
+ *   inputs     Eingangskanäle in MixConsole-Reihenfolge: Titel (Kennung "in<Platz>") oder
+ *              { key, title }; Vorgabe 32 Kanäle "ch0".."ch31". Input 6 mit Inserts ist "ch6".
+ *   zoneDelivery  "danach" (Vorgabe) | "sofort", siehe oben
+ *   zoneEcho   false: Zonen-Aktionen melden nur, was sich wirklich ändert
+ *   zoneBroken true: Zonen-Aktionen werden aufgezeichnet, bewegen aber nichts
  */
 function createHost(options = {}) {
 	const host = {
@@ -129,14 +155,22 @@ function createHost(options = {}) {
 		log: [], // was der Host getan hat
 		logTimes: [],
 		callbackErrors: [], // Ausnahmen, die einen Callback verlassen haben
-		bindings: [], // { sv, hv, toggle }
+		bindings: [], // { sv, hv, toggle }; hv ist ein Hostwert oder der Wert eines Zonen-Kanals
 		buttons: [], // { x, y, w, h, sv }
 		surfaceValues: [],
 		commandBindings: [],
 		viewers: [],
-		channels: [],
+		channels: [], // Zonen-Kanäle in Erzeugungsreihenfolge
 		accesses: [],
 		zones: [],
+		inputList: [], // Nuendos Eingangskanäle: { key, title, base, slotTitles }
+		zoneActions: [], // { zone, action, from, to, at }
+		zoneDelivery: options.zoneDelivery ?? "danach",
+		zoneEcho: options.zoneEcho ?? true,
+		deferred: [], // Meldungen von Zonen-Aktionen bis nach mOnIdle
+		inIdle: false,
+		clock: 1000, // simulierte Zeit für mOnIdle (performance.now)
+		idleHandler: null,
 		objects: {},
 		removed: new Set(),
 		hostValues: new Map(),
@@ -316,6 +350,39 @@ function createHost(options = {}) {
 		host.objects[SLOT_BASE + 3].kids = [TONE3000];
 	}
 
+	//--------------------------------------------------------------------------
+	// Eingangskanäle des Projekts
+	//--------------------------------------------------------------------------
+	let nextBase = 2000;
+
+	/** Ein Eingangskanal mit fester Kennung; "ch6" ist Input 6 mit dem Baum oben. */
+	function makeInput(key, title) {
+		const m = /^ch(\d+)$/.exec(key);
+		const base = key === "ch6" ? INPUT_BASE : m ? 1000 + Number(m[1]) : nextBase++;
+		if (host.objects[base]) host.objects[base].title = title;
+		else obj(base, "InputChannel", title, [param(1027, "Mute", { display: onOff })]);
+		host.removed.delete(base);
+		return { key, title, base, slotTitles: [] };
+	}
+
+	const inputSpecs = options.inputs ?? Array.from({ length: 32 }, (_, i) => ({ key: `ch${i}`, title: i === 0 ? "Stereo In 1-2" : `Mono In ${i}` }));
+	inputSpecs.forEach((spec, i) => {
+		const s = typeof spec === "string" ? { key: `in${i}`, title: spec } : spec;
+		host.inputList.push(makeInput(s.key, s.title));
+	});
+
+	function inputByKey(key) {
+		return host.inputList.find((c) => c.key === key) ?? null;
+	}
+
+	/** Kennung oder Kanal-Nummer (6 = "ch6") zu einem Eingangskanal. */
+	function inputRef(ref) {
+		const key = typeof ref === "number" ? `ch${ref}` : ref;
+		const input = inputByKey(key);
+		if (!input) throw new Error(`Eingangskanal ${key} gibt es nicht`);
+		return input;
+	}
+
 	function contains(rootID, id) {
 		if (rootID === id) return true;
 		const o = host.objects[rootID];
@@ -337,7 +404,8 @@ function createHost(options = {}) {
 	function notifyChange(id, tag) {
 		for (const a of host.accesses) {
 			if (!a.mOnParameterChange) continue;
-			if (id === a._base || !contains(a._base, id)) continue; // Kanalebene meldet Nuendo nicht
+			const base = a._base;
+			if (base < 0 || id === base || !contains(base, id)) continue; // Kanalebene meldet Nuendo nicht
 			later(`mOnParameterChange Platz ${a._index}`, a.mOnParameterChange, host.device, host.mapping, id, tag);
 		}
 	}
@@ -348,10 +416,15 @@ function createHost(options = {}) {
 	function hv(key) {
 		let v = host.hostValues.get(key);
 		if (!v) {
-			v = { key, value: 0, bindings: [] };
+			v = { key, value: 0 };
 			host.hostValues.set(key, v);
 		}
 		return v;
+	}
+
+	/** Bindungen, deren Hostwert gerade dieser ist — beim Wert eines Zonen-Kanals der des Kanals unter ihm. */
+	function bindingsOf(key) {
+		return host.bindings.filter((b) => b.hv.key === key);
 	}
 
 	/** Hostwert ändern (Nuendo selbst oder über ein Binding) und an alle Bindungen melden. */
@@ -361,7 +434,7 @@ function createHost(options = {}) {
 		v.value = value;
 		logHost(`Hostwert ${key} = ${value} (${origin})`);
 		mirrorToDirectAccess(key, value);
-		for (const b of v.bindings) setSurface(b.sv, value);
+		for (const b of bindingsOf(key)) setSurface(b.sv, value);
 	}
 
 	/** Mute und Slot-Zustände stehen in Nuendo auch als DirectAccess-Parameter. */
@@ -400,7 +473,10 @@ function createHost(options = {}) {
 		const old = sv.value;
 		setSurface(sv, value);
 		if (old === value) return;
-		for (const b of host.bindings.filter((x) => x.sv === sv)) setHostValue(b.hv.key, value >= 0.5 ? 1 : 0, origin);
+		for (const b of host.bindings.filter((x) => x.sv === sv)) {
+			if (b.hv.key === null) continue; // Zonen-Kanal auf einem leeren Platz
+			setHostValue(b.hv.key, value >= 0.5 ? 1 : 0, origin);
+		}
 	}
 
 	const KNOWN_COMMANDS = new Set(["Preset/Next", "Preset/Previous", "Preset/Open Browser"]);
@@ -455,25 +531,30 @@ function createHost(options = {}) {
 
 	function makeAccess(channel) {
 		const index = channel.index;
-		const base = index === 6 ? INPUT_BASE : 1000 + index;
-		if (!host.objects[base]) {
-			obj(base, "InputChannel", index === 0 ? "Stereo In 1-2" : `Mono In ${index}`, [param(1027, "Mute", { display: onOff })]);
-		}
-		const a = { _index: index, _base: base, activated: null };
+		const a = {
+			_index: index,
+			_channel: channel,
+			/** Basisobjekt des Kanals, auf dem die Zone gerade steht; -1 auf einem leeren Platz. */
+			get _base() {
+				const t = targetOf(channel);
+				return t ? t.base : -1;
+			},
+			activated: null,
+		};
 		const api = {
 			activate(m) {
 				a.activated = m;
 				// Wie es ein Host tun könnte: Callbacks mitten in der Aktivierung.
-				if (options.objectChangeOnActivate) invoke("mOnObjectChange in activate", a.mOnObjectChange, host.device, m, base);
+				if (options.objectChangeOnActivate) invoke("mOnObjectChange in activate", a.mOnObjectChange, host.device, m, a._base);
 			},
-			getBaseObjectID: (m) => base,
+			getBaseObjectID: (m) => a._base,
 			getNumberOfChildObjects: (m, id) => O(id).kids.length,
 			getChildObjectID: (m, id, i) => O(id).kids[i],
 			getObjectTypeName: (m, id) => O(id).type,
 			getObjectTitle: (m, id) => (host.objects[id] && !host.removed.has(id) ? host.objects[id].title : ""),
 			getObjectUniqueName: (m, id) => O(id).uniqueName ?? "uniq" + O(id).id,
 			getObjectUniqueIDString: (m, id) => "UID" + O(id).id,
-			getMixerChannelIndex: () => index,
+			getMixerChannelIndex: () => -1, // so am Gerät (Suchlauf: mixerIndex=-1)
 			getMixerChannelZone: () => 0,
 			isMixerChannelVisible: () => true,
 			getNumberOfParameters: (m, id) => O(id).params.length,
@@ -533,6 +614,7 @@ function createHost(options = {}) {
 				return fn(...args);
 			};
 		}
+		channel.accesses.push(a);
 		host.accesses.push(a);
 		return a;
 	}
@@ -546,19 +628,120 @@ function createHost(options = {}) {
 		const h = hv(key);
 		if (h.value === value) return;
 		h.value = value;
-		for (const b of h.bindings) setSurface(b.sv, value);
+		for (const b of bindingsOf(key)) setSurface(b.sv, value);
 	}
 
 	//--------------------------------------------------------------------------
-	// Kanäle, Viewer, Page, Surface, Treiber
+	// Zonen, Kanäle, Viewer
 	//--------------------------------------------------------------------------
+	/** Der Eingangskanal, auf dem ein Zonen-Kanal gerade steht, oder null (leerer Platz). */
+	function targetOf(channel) {
+		return host.inputList[channel.zone.offset + channel.slot] ?? null;
+	}
+
+	/**
+	 * Hostwert eines Zonen-Kanals: zeigt immer auf den Kanal, auf dem die Zone gerade
+	 * steht. key ist dessen Hostwert ("ch6.mute"), null auf einem leeren Platz.
+	 */
+	function zoneValue(channel, suffix) {
+		const cacheKey = `zv:${suffix}`;
+		if (!channel.values[cacheKey]) {
+			channel.values[cacheKey] = {
+				zoneValue: true,
+				channel,
+				suffix,
+				get key() {
+					const t = targetOf(channel);
+					return t ? `${t.key}.${suffix}` : null;
+				},
+			};
+		}
+		return channel.values[cacheKey];
+	}
+
+	/** Meldung eines Zonen-Kanals: sofort (wie later) oder gesammelt bis nach mOnIdle. */
+	function deliver(deferred, label, fn, ...args) {
+		if (typeof fn !== "function") return;
+		if (deferred) host.deferred.push(() => later(label, fn, ...args));
+		else later(label, fn, ...args);
+	}
+
+	/**
+	 * Einen Zonen-Kanal nach Bewegung oder Listenänderung nachziehen: Objektwechsel,
+	 * Titel, Slotnamen der Viewer, Werte der Bindungen — jeweils nur bei Änderung, mit
+	 * echo alles (so meldet Nuendo nach einer Zonen-Aktion).
+	 */
+	function refreshChannel(channel, { echo = false, deferred = false } = {}) {
+		const t = targetOf(channel);
+		const base = t ? t.base : -1;
+		const title = t ? t.title : "";
+		if (echo || channel.lastBase !== base) {
+			for (const a of channel.accesses) deliver(deferred, `mOnObjectChange Kanal ${channel.index}`, a.mOnObjectChange, host.device, host.mapping, base);
+		}
+		channel.lastBase = base;
+		if (echo || channel.lastTitle !== title) {
+			channel.lastTitle = title;
+			deliver(deferred, `mOnTitleChange Kanal ${channel.index}`, channel.mOnTitleChange, host.device, host.mapping, title);
+		}
+		for (const v of host.viewers) {
+			if (v.channel !== channel) continue;
+			const name = t ? (t.slotTitles[v.slot] ?? "") : "";
+			if (!echo && v.lastTitle === name) continue;
+			v.lastTitle = name;
+			deliver(deferred, `Zonentitel ${v.name}`, v.zone.titleHandler, host.device, host.mapping, name);
+		}
+		for (const b of host.bindings) {
+			if (!b.hv.zoneValue || b.hv.channel !== channel) continue;
+			const value = b.hv.key === null ? 0 : hv(b.hv.key).value;
+			if (deferred) host.deferred.push(() => setSurface(b.sv, value));
+			else setSurface(b.sv, value);
+		}
+	}
+
+	/** Nach einer Änderung der Eingangsliste: jeder Zonen-Kanal zeigt womöglich woanders hin. */
+	function refreshAll() {
+		for (const ch of host.channels) refreshChannel(ch);
+	}
+
+	function zoneAction(zone, name) {
+		return {
+			trigger(m) {
+				if (!m) throw new Error(`${zone.name}.${name} ohne activeMapping`);
+				const width = zone.channels.length;
+				const count = host.inputList.length;
+				const from = zone.offset;
+				let to = from;
+				if (name === "mResetBank") to = 0;
+				else if (name === "mNextBank" && from + width < count) to = from + width;
+				else if (name === "mPrevBank") to = Math.max(0, from - width);
+				else if (name === "mShiftRight" && from + width < count) to = from + 1;
+				else if (name === "mShiftLeft") to = Math.max(0, from - 1);
+				if (options.zoneBroken) to = from;
+				zone.offset = to;
+				host.zoneActions.push({ zone: zone.name, action: name, from, to, at: host.clock });
+				logHost(`Zone ${zone.name}: ${name} ${from} -> ${to}`);
+				const deferred = host.zoneDelivery === "danach" && host.inIdle;
+				for (const ch of zone.channels) refreshChannel(ch, { echo: host.zoneEcho, deferred });
+			},
+		};
+	}
+
 	function makeViewer(channel, name) {
 		const zone = { titleHandler: null, paramValues: 0 };
 		const viewer = {
 			name,
-			channelIndex: channel.index,
+			channel,
 			slot: null,
 			zone,
+			lastTitle: "",
+			/** Kennung des Kanals, auf dem der Viewer gerade steht. */
+			get channelKey() {
+				const t = targetOf(channel);
+				return t ? t.key : null;
+			},
+			get zoneName() {
+				return channel.zone.name;
+			},
 			mParameterBankZone: {
 				makeParameterValue() {
 					zone.paramValues++;
@@ -576,13 +759,13 @@ function createHost(options = {}) {
 				return viewer;
 			},
 			get mEdit() {
-				return hv(`ch${channel.index}.slot${viewer.slot}.edit`);
+				return zoneValue(channel, `slot${viewer.slot}.edit`);
 			},
 			get mBypass() {
-				return hv(`ch${channel.index}.slot${viewer.slot}.bypass`);
+				return zoneValue(channel, `slot${viewer.slot}.bypass`);
 			},
 			get mOn() {
-				return hv(`ch${channel.index}.slot${viewer.slot}.on`);
+				return zoneValue(channel, `slot${viewer.slot}.on`);
 			},
 		};
 		host.viewers.push(viewer);
@@ -594,19 +777,25 @@ function createHost(options = {}) {
 		const channel = {
 			index,
 			zone,
+			slot: zone.channels.length, // Platz in der Zone
+			accesses: [],
+			values: {},
+			lastTitle: undefined,
+			lastBase: undefined,
 			mOnTitleChange: null,
 			mValue: {
 				get mMute() {
-					return hv(`ch${index}.mute`);
+					return zoneValue(channel, "mute");
 				},
 				get mSolo() {
-					return hv(`ch${index}.solo`);
+					return zoneValue(channel, "solo");
 				},
 			},
 			mInsertAndStripEffects: {
 				makeInsertEffectViewer: (name) => makeViewer(channel, name),
 			},
 		};
+		zone.channels.push(channel);
 		host.channels.push(channel);
 		return channel;
 	}
@@ -615,12 +804,14 @@ function createHost(options = {}) {
 		mHostAccess: {
 			mMixConsole: {
 				makeMixerBankZone(name) {
-					const zone = { name, inputsOnly: false };
+					const zone = { name, inputsOnly: false, offset: 0, channels: [] };
 					zone.includeInputChannels = () => {
 						zone.inputsOnly = true;
 						return zone;
 					};
 					zone.makeMixerBankChannel = () => makeChannel(zone);
+					zone.mAction = {};
+					for (const action of ["mResetBank", "mNextBank", "mPrevBank", "mShiftLeft", "mShiftRight"]) zone.mAction[action] = zoneAction(zone, action);
 					host.zones.push(zone);
 					return zone;
 				},
@@ -628,7 +819,7 @@ function createHost(options = {}) {
 			makeDirectAccess: (channel) => makeAccess(channel),
 		},
 		makeValueBinding(sv, hostValue) {
-			if (!sv || !hostValue || typeof hostValue.key !== "string") throw new Error("makeValueBinding: kein Hostwert");
+			if (!sv || !hostValue || !(hostValue.zoneValue || typeof hostValue.key === "string")) throw new Error("makeValueBinding: kein Hostwert");
 			const b = { sv, hv: hostValue, toggle: false };
 			b.api = {
 				setTypeToggle() {
@@ -639,7 +830,6 @@ function createHost(options = {}) {
 					return b.api;
 				},
 			};
-			hostValue.bindings.push(b);
 			host.bindings.push(b);
 			return b.api;
 		},
@@ -651,6 +841,9 @@ function createHost(options = {}) {
 		},
 		set mOnActivate(fn) {
 			host.activateHandler = fn;
+		},
+		set mOnIdle(fn) {
+			host.idleHandler = fn;
 		},
 	};
 
@@ -742,27 +935,107 @@ function createHost(options = {}) {
 
 	host.activate = () => invoke("mOnActivate", host.activateHandler, host.device, host.mapping);
 
-	host.setInputTitle = (index, title) => {
-		const ch = host.channels[index];
-		invoke(`mOnTitleChange Platz ${index}`, ch.mOnTitleChange, host.device, host.mapping, title);
-	};
-
-	/** Titel wie in der MixConsole: Platz 0 "Stereo In 1-2", dann "Mono In n". */
-	host.setInputTitles = (overrides = {}) => {
-		for (let i = 0; i < host.channels.length; i++) {
-			const title = overrides[i] ?? (i === 0 ? "Stereo In 1-2" : `Mono In ${i}`);
-			host.setInputTitle(i, title);
+	/**
+	 * Einen Eingangskanal umbenennen (Kennung, Kanal-Nummer 6 = "ch6" oder ein Eingangskanal
+	 * aus inputList) und den Titel an jeden Zonen-Kanal melden, der auf ihm steht — immer, auch
+	 * ohne Änderung, wie bisher setInputTitle.
+	 */
+	host.renameInput = (ref, title) => {
+		const input = typeof ref === "object" ? ref : inputRef(ref);
+		input.title = title;
+		host.objects[input.base].title = title;
+		for (const ch of host.channels) {
+			if (targetOf(ch) !== input) continue;
+			ch.lastTitle = title;
+			invoke(`mOnTitleChange Kanal ${ch.index}`, ch.mOnTitleChange, host.device, host.mapping, title);
 		}
 	};
 
-	/** Plugin-Name eines Slots, wie ihn die Parameter-Bank-Zone jedes passenden Viewers meldet. */
-	host.setSlotTitle = (channelIndex, slot, title) => {
+	/** Titel des Eingangskanals auf Platz index der Liste (MixConsole-Reihenfolge). */
+	host.setInputTitle = (index, title) => {
+		const input = host.inputList[index];
+		if (!input) throw new Error(`kein Eingangskanal auf Platz ${index}`);
+		host.renameInput(input, title);
+	};
+
+	/**
+	 * Alle Titel melden, wie Nuendo sie nach dem Laden liefert; overrides benennt Plätze
+	 * vorher um ({ 6: "Gitarre" }). Ohne Aufruf hat noch kein Zonen-Kanal einen Titel.
+	 */
+	host.setInputTitles = (overrides = {}) => {
+		host.inputList.forEach((input, i) => host.renameInput(input, overrides[i] ?? input.title));
+	};
+
+	/**
+	 * Plugin-Name eines Slots eines Eingangskanals (Kennung oder Nummer, 6 = "ch6"), wie ihn
+	 * die Parameter-Bank-Zone jedes Viewers meldet, der gerade auf diesem Kanal steht.
+	 */
+	host.setSlotTitle = (ref, slot, title) => {
+		const input = inputRef(ref);
+		input.slotTitles[slot] = title;
 		for (const v of host.viewers) {
-			if (v.channelIndex === channelIndex && v.slot === slot) {
+			if (targetOf(v.channel) === input && v.slot === slot) {
+				v.lastTitle = title;
 				invoke(`Zonentitel ${v.name}`, v.zone.titleHandler, host.device, host.mapping, title);
 			}
 		}
 	};
+
+	/** Einen Eingangskanal auf Platz index einfügen (Kanäle dahinter rutschen weiter). */
+	host.insertInput = (index, title, key = `neu${nextBase}`) => {
+		const input = makeInput(key, title);
+		host.inputList.splice(index, 0, input);
+		logHost(`Eingang ${key} "${title}" auf Platz ${index} eingefügt`);
+		refreshAll();
+		return input;
+	};
+
+	/** Den Eingangskanal auf Platz index entfernen. */
+	host.removeInput = (index) => {
+		const [input] = host.inputList.splice(index, 1);
+		host.removed.add(input.base);
+		logHost(`Eingang ${input.key} "${input.title}" von Platz ${index} entfernt`);
+		refreshAll();
+		return input;
+	};
+
+	host.inputByKey = inputByKey;
+	host.targetOf = targetOf;
+	/** Kennung des Kanals, auf dem die Zone gerade steht (Platz slot in der Zone). */
+	host.zoneTarget = (zoneName, slot = 0) => {
+		const zone = host.zones.find((z) => z.name === zoneName);
+		const t = zone ? host.inputList[zone.offset + slot] : null;
+		return t ? t.key : null;
+	};
+
+	/** Gesammelte Meldungen der Zonen-Aktionen zustellen. */
+	host.flush = () => {
+		while (host.deferred.length) host.deferred.shift()();
+	};
+
+	/**
+	 * Leerlauf: passes-mal die Uhr um stepMs weiter und page.mOnIdle aufrufen; performance.now()
+	 * liefert dabei host.clock. Meldungen der Zonen-Aktionen kommen danach (zoneDelivery).
+	 */
+	host.idle = (passes = 1, stepMs = 50) => {
+		for (let i = 0; i < passes; i++) {
+			host.clock += stepMs;
+			if (typeof host.idleHandler === "function") {
+				performance.now = () => host.clock;
+				host.inIdle = true;
+				try {
+					invoke("mOnIdle", host.idleHandler, host.device, host.mapping);
+				} finally {
+					host.inIdle = false;
+					delete performance.now;
+				}
+			}
+			host.flush();
+		}
+	};
+
+	/** So lange Leerlauf, wie eine Suche höchstens braucht (simuliert, Vorgabe 4 s). */
+	host.settle = (ms = 4000, stepMs = 50) => host.idle(Math.ceil(ms / stepMs), stepMs);
 
 	host.sysex = (bytes) => invoke(`mOnSysex ${bytes[2]}`, host.sysexHandler, host.device, bytes);
 
@@ -831,7 +1104,7 @@ function createHost(options = {}) {
 	/**
 	 * Plugin in einem Slot ersetzen (Plugin neu geladen: neue Objekt-ID). Optionen:
 	 *   removeCallback  mOnObjectWillBeRemoved für die alte ID (Vorgabe false)
-	 *   objectChange    danach mOnObjectChange an Platz 6 (Vorgabe false)
+	 *   objectChange    danach mOnObjectChange am Kanal "ch6" (Vorgabe false)
 	 *   title           Titel des neuen Plugins (Vorgabe "TONE3000"); null = Slot leer
 	 *   kind            "tuner": Steinbergs Tuner (auch mit anderem Titel); Titel "Tuner" ohne
 	 *                   kind ist ebenfalls einer; "plain": immer ein schlichtes Plugin
@@ -865,9 +1138,13 @@ function createHost(options = {}) {
 		if (opts.objectChange) host.fireObjectChange(6);
 	};
 
-	host.fireObjectChange = (index) => {
-		const a = host.accesses[index];
-		invoke("mOnObjectChange", a.mOnObjectChange, host.device, host.mapping, a._base);
+	/** mOnObjectChange an jedem DirectAccess-Objekt, das gerade auf diesem Eingangskanal steht (6 = "ch6"). */
+	host.fireObjectChange = (ref) => {
+		const input = inputRef(ref);
+		for (const a of host.accesses) {
+			if (targetOf(a._channel) !== input) continue;
+			invoke("mOnObjectChange", a.mOnObjectChange, host.device, host.mapping, input.base);
+		}
 	};
 
 	host.accessOf = (index) => host.accesses[index];

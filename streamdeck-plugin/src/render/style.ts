@@ -38,6 +38,19 @@ export const GOLD_ACTIVE_STOPS: readonly [number, string][] = [
 	[1, "#fff6cc"],
 ];
 
+/** Roter Rahmen der Tuner-Taste: automatische Stummschaltung eingeschaltet. */
+export const RED_STOPS: readonly [number, string][] = [
+	[0, "#ff9f8f"],
+	[0.5, "#b3221a"],
+	[1, "#ea6552"],
+];
+/** Dasselbe hell leuchtend: Tuner-Modus an und Stummschaltung eingeschaltet. */
+export const RED_BRIGHT_STOPS: readonly [number, string][] = [
+	[0, "#ff9c8c"],
+	[0.5, "#e3261a"],
+	[1, "#ff5f4a"],
+];
+
 /** Linearer Verlauf von oben nach unten. */
 export function verticalGradient(id: string, stops: readonly [number, string][]): string {
 	const s = stops.map(([o, c]) => `<stop offset="${o}" stop-color="${c}"/>`).join("");

@@ -4,6 +4,7 @@ import {
 	JsonValue,
 	KeyAction,
 	KeyDownEvent,
+	KeyUpEvent,
 	SendToPluginEvent,
 	SingletonAction,
 	WillAppearEvent,
@@ -34,6 +35,8 @@ type TunerSettings = {
 
 /** Höchstens alle 100 ms ein setImage (Elgato: etwa 10 Bilder je Sekunde und Aktion). */
 export const TUNER_KEY_INTERVAL_MS = 100;
+/** Ab so langem Halten gilt der Druck als lang: automatische Stummschaltung umschalten. */
+export const LONG_PRESS_MS = 500;
 /** Erlaubter Kammerton (Hz); außerhalb gilt 440. */
 export const A4_MIN = 400;
 export const A4_MAX = 480;
@@ -41,6 +44,16 @@ export const A4_MAX = 480;
 interface Entry {
 	key: KeyAction<TunerSettings>;
 	throttle: Throttle;
+	/** Letzte bekannte Settings der Taste (Rahmenfarbe, Langdruck). */
+	settings: TunerSettings;
+	/** Läuft, solange die Taste gedrückt ist und der Druck noch nicht als lang gilt. */
+	pressTimer: ReturnType<typeof setTimeout> | null;
+}
+
+/** Roter Rahmen: eigener Tuner mit eingeschalteter automatischer Stummschaltung. */
+export function muteArmed(settings: TunerSettings | undefined): boolean {
+	const view = tunerSettingsOf(settings);
+	return view.source === "own" && view.muteChannel;
 }
 
 /** Nur ein echtes true zählt; alles andere (fehlt, "true", 1) heißt aus. */
@@ -77,15 +90,17 @@ export function inputItems(items: readonly InputItem[]): JsonValue[] {
 }
 
 /**
- * Stimmen: Ein Druck schaltet den Tuner-Modus um. Die Touch-Leiste zeigt dann die
- * Stimmanzeige, die Regler ruhen.
+ * Stimmen: Ein kurzer Druck schaltet den Tuner-Modus um (beim Loslassen). Die
+ * Touch-Leiste zeigt dann die Stimmanzeige, die Regler ruhen. Ein langer Druck
+ * (LONG_PRESS_MS) schaltet die automatische Stummschaltung um; ist sie an, trägt die
+ * Taste einen roten statt goldenen Rahmen (Wunsch des Users 2026-10-07).
  *
  * Quelle (Setting „source"):
  *   own        Eigener Tuner (Vorgabe): Das Plugin misst den gewählten Eingang selbst
  *              (Audio-Kindprozess, Setting „input", Vorgabe MADI 6; Kammerton „a4").
  *              Mit „muteChannel" (Vorgabe an) wird Input 6 in Nuendo stummgeschaltet,
- *              solange gestimmt wird — nur wenn er nicht schon stumm war, und aufgehoben
- *              wird nur, was die Taste selbst gesetzt hat.
+ *              solange gestimmt wird (nur wenn er nicht schon stumm war); beim
+ *              Ausschalten wird er immer wieder offen geschaltet.
  *   steinberg  Steinbergs Tuner in Slot 1 wie bisher (0x13/0x24, dessen eigene Mute);
  *              „openWindow" öffnet dazu sein Fenster.
  *
@@ -119,29 +134,87 @@ export class TunerAction extends SingletonAction<TunerSettings> {
 	override onWillAppear(ev: WillAppearEvent<TunerSettings>): void {
 		if (!ev.action.isKey()) return;
 		const id = ev.action.id;
-		this.entries.get(id)?.throttle.cancel();
-		this.images.forget(id);
-		const entry: Entry = { key: ev.action, throttle: new Throttle(TUNER_KEY_INTERVAL_MS, () => this.paint(id)) };
+		this.forget(id);
+		const entry: Entry = {
+			key: ev.action,
+			throttle: new Throttle(TUNER_KEY_INTERVAL_MS, () => this.paint(id)),
+			settings: ev.payload.settings ?? {},
+			pressTimer: null,
+		};
 		this.entries.set(id, entry);
-		this.session.configureTuner(tunerSettingsOf(ev.payload.settings));
+		this.session.configureTuner(tunerSettingsOf(entry.settings));
 		entry.throttle.request();
 	}
 
 	override onWillDisappear(ev: WillDisappearEvent<TunerSettings>): void {
-		this.entries.get(ev.action.id)?.throttle.cancel();
-		this.entries.delete(ev.action.id);
-		this.images.forget(ev.action.id);
+		this.forget(ev.action.id);
 	}
 
-	/** Quelle, Eingang, Mute und Kammerton gelten sofort; neu zeichnen. */
+	/** Quelle, Eingang, Mute und Kammerton gelten sofort; neu zeichnen (Rahmenfarbe). */
 	override onDidReceiveSettings(ev: DidReceiveSettingsEvent<TunerSettings>): void {
+		const entry = this.entries.get(ev.action.id);
+		if (entry) entry.settings = ev.payload.settings ?? {};
 		this.session.configureTuner(tunerSettingsOf(ev.payload.settings));
-		this.entries.get(ev.action.id)?.throttle.request();
+		entry?.throttle.request();
 	}
 
+	/**
+	 * Kurz oder lang: Beim Drücken startet nur die Uhr. Wird vor LONG_PRESS_MS
+	 * losgelassen, schaltet onKeyUp den Tuner-Modus um (kurzer Druck, wie bisher —
+	 * jetzt beim Loslassen, sonst ließe sich lang nicht von kurz trennen). Läuft die
+	 * Uhr ab, schaltet die Taste noch während des Haltens die automatische
+	 * Stummschaltung um; das Loslassen danach tut nichts mehr.
+	 */
 	override onKeyDown(ev: KeyDownEvent<TunerSettings>): void {
-		this.session.configureTuner(tunerSettingsOf(ev.payload.settings));
-		if (!this.session.pressTuner(openWindowOf(ev.payload.settings))) void ev.action.showAlert();
+		const entry = this.entries.get(ev.action.id);
+		if (!entry) {
+			this.shortPress(ev.action, ev.payload.settings);
+			return;
+		}
+		entry.settings = ev.payload.settings ?? entry.settings;
+		if (entry.pressTimer) clearTimeout(entry.pressTimer);
+		entry.pressTimer = setTimeout(() => {
+			entry.pressTimer = null;
+			this.toggleAutoMute(entry);
+		}, LONG_PRESS_MS);
+	}
+
+	override onKeyUp(ev: KeyUpEvent<TunerSettings>): void {
+		const entry = this.entries.get(ev.action.id);
+		if (!entry || !entry.pressTimer) return; // langer Druck schon ausgeführt
+		clearTimeout(entry.pressTimer);
+		entry.pressTimer = null;
+		entry.settings = ev.payload.settings ?? entry.settings;
+		this.shortPress(ev.action, entry.settings);
+	}
+
+	/** Kurzer Druck: Tuner-Modus an/aus (gesperrt nur bei der Steinberg-Quelle, Warnzeichen). */
+	private shortPress(key: KeyAction<TunerSettings>, settings: TunerSettings | undefined): void {
+		this.session.configureTuner(tunerSettingsOf(settings));
+		if (!this.session.pressTuner(openWindowOf(settings))) void key.showAlert();
+	}
+
+	/**
+	 * Langer Druck: automatische Stummschaltung (Setting „muteChannel") umschalten und
+	 * speichern — der Haken im Property Inspector zieht mit. Wirkt sofort, auch im
+	 * Tuner-Modus: an = Input 6 jetzt stumm (sofern nicht schon), aus = die eigene
+	 * Stummschaltung wieder aufheben (Store.configureTuner).
+	 */
+	private toggleAutoMute(entry: Entry): void {
+		const next: TunerSettings = { ...entry.settings, muteChannel: !tunerSettingsOf(entry.settings).muteChannel };
+		entry.settings = next;
+		this.session.configureTuner(tunerSettingsOf(next));
+		void entry.key.setSettings(next);
+		streamDeck.logger.info(`Tuner: automatische Stummschaltung ${next.muteChannel ? "an" : "aus"} (langer Druck)`);
+		entry.throttle.request();
+	}
+
+	private forget(id: string): void {
+		const entry = this.entries.get(id);
+		if (entry?.pressTimer) clearTimeout(entry.pressTimer);
+		entry?.throttle.cancel();
+		this.entries.delete(id);
+		this.images.forget(id);
 	}
 
 	/** Datenquelle der Auswahl „Eingang" im Property Inspector (sdpi-components). */
@@ -163,11 +236,12 @@ export class TunerAction extends SingletonAction<TunerSettings> {
 		let image: string;
 		try {
 			const tuner = this.session.tuner();
+			const red = muteArmed(entry.settings);
 			if (tuner.active) {
-				image = renderTunerKey(tuner.reading, tuner.keyStatus);
+				image = renderTunerKey(tuner.reading, tuner.keyStatus, red);
 			} else {
 				const view = this.session.toggleView("tuner");
-				image = renderToggleKey("tuner", view.on, view.status);
+				image = renderToggleKey("tuner", view.on, view.status, red);
 			}
 		} catch (e) {
 			streamDeck.logger.error(`Taste tuner zeichnen fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`);

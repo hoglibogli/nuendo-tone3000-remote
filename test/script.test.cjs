@@ -14,6 +14,12 @@
  *      Beispielsitzung aus docs/protokoll.md Byte für Byte (3g, mit Protokoll 4)
  *   4  Protokoll 4: Tuner-Modus (0x13), Stimmanzeige (0x24), Weiterleitung nur im Modus,
  *      Dedup, kein Tuner, Tuner-Objekt wechselt, Kosten im Callback, Sicherheit beim Verbinden
+ *   5  Deck-Kanal folgt dem Namen "Mono In 6" (Befund 2026-10-06): einziger Eingang auf Platz 0,
+ *      32 Eingänge wie früher, Eingänge ändern sich zur Laufzeit, Ziel fehlt (keine
+ *      Dauer-Schieberei, Rundenbudget), mehr Eingänge als die Such-Zone (Rückfall), keine
+ *      Selbstauslösung durch Zonen-Aktionen, Beobachtung am Deck-Kanal, Selbsttest der
+ *      Zonen im Stub. Teile 1, 3 und 4 aktivieren mit start(): Aktivierung und Leerlauf,
+ *      bis der Deck-Kanal steht — wo eine Prüfung fest Platz 6 annahm, steht der Grund dabei.
  *   2  das echte Werkzeug tools/suchlauf.cjs gegen das Script, als Kopie in einem
  *      Temp-Ordner; MIDI über ein Portpaar im Speicher (der Import von @julusian/midi
  *      wird abgefangen), Zeit 20-fach gerafft
@@ -54,6 +60,20 @@ function newHost(options) {
 	allHosts.push(h);
 	return h;
 }
+
+/**
+ * Aktivieren und Leerlauf, bis die Deck-Suche fertig ist: Erst danach steht der Deck-Kanal
+ * auf "Mono In 6" (in Nuendo läuft mOnIdle ständig). Die Suche meldet dabei, was der
+ * Deck-Kanal jetzt zeigt; die Prüfungen danach messen ab hier.
+ */
+function start(h) {
+	h.activate();
+	h.settle();
+	return h;
+}
+const DECK_ZONE = "Tone3000 Ziel";
+const deckActions = (h) => h.zoneActions.filter((a) => a.zone === DECK_ZONE);
+const actionList = (h, from = 0) => deckActions(h).slice(from).map((a) => (a.action === "mShiftRight" ? "R" : a.action === "mResetBank" ? "0" : a.action)).join("");
 
 const sysexBytes = (type, data = []) => [0xf0, 0x7d, type, ...data, 0xf7];
 const v14 = (v) => [v >> 7, v & 0x7f];
@@ -199,14 +219,15 @@ const suchlauf = (text) => {
 	probeCount++;
 	sx(H1, 0x02, text);
 };
-const acc6 = H1.accessOf(6);
-const cb = (id, tag) => H1.invoke("mOnParameterChange direkt", acc6.mOnParameterChange, H1.device, H1.mapping, id, tag);
+// Der Parameter-Callback hängt am DirectAccess des Deck-Kanals (Deck-Zone, 1 Platz).
+const accDeck = H1.accesses.find((a) => a.mOnParameterChange);
+const cb = (id, tag) => H1.invoke("mOnParameterChange direkt", accDeck.mOnParameterChange, H1.device, H1.mapping, id, tag);
 
 H1.setInputTitles();
 
 mark("Setzen vor der Aktivierung");
 setzen("3;Program;plain;2");
-H1.activate();
+start(H1);
 sx(H1, 0x01);
 
 mark("Setzen ohne Suchlauf");
@@ -310,7 +331,7 @@ befehl("next;0");
 // Variante: "Program" mitten im MIDI-CC-Block (so war es für 0.0.9 erwartet)
 const H1b = newHost({ programAt: 450 });
 H1b.setInputTitles();
-H1b.activate();
+start(H1b);
 sx(H1b, 0x02);
 console.log = realLog;
 
@@ -320,8 +341,8 @@ const count = (re) => lines.filter((l) => re.test(l)).length;
 const idx = (re, from = 0) => lines.findIndex((l, i) => i >= from && re.test(l));
 const between = (re, from, to) => lines.some((l, i) => i > from && i < to && re.test(l));
 
-// Konsolenzeilen "TONE3000: ..." und "ABFRAGE: ..." schreibt das Script bewusst nur in die Konsole.
-const scriptConsole = consoleLines.filter((l) => !l.startsWith("### ") && l !== "TONE3000 Remote aktiv" && !/^(TONE3000|ABFRAGE|Tuner): /.test(l));
+// Konsolenzeilen "TONE3000: ...", "ABFRAGE: ...", "Tuner: ..." und "Deck: ..." schreibt das Script bewusst nur in die Konsole.
+const scriptConsole = consoleLines.filter((l) => !l.startsWith("### ") && l !== "TONE3000 Remote aktiv" && !/^(TONE3000|ABFRAGE|Tuner|Deck): /.test(l));
 const h1Console = scriptConsole.slice(0, scriptConsole.length - debugLines(H1b).length);
 expect(JSON.stringify(h1Console) === JSON.stringify(lines), "Frames ergeben dieselben Zeilen wie die Konsole");
 expect(H1.callbackErrors.length === 0, `keine Ausnahme verlässt einen Callback (${H1.callbackErrors.join(" | ") || "0"})`);
@@ -335,8 +356,11 @@ expect(count(/^--- Setzen fertig ---$/) === setCount, `jedes Setzen endet mit "-
 expect(count(/^--- Suchlauf TONE3000 Remote, Protokoll 4, Ziel "/) === probeCount, `Kopfzeile mit "Protokoll 4" in jedem Suchlauf (${probeCount}x)`);
 expect(count(/^--- Suchlauf beendet ---$/) === probeCount, `jeder Suchlauf endet genau einmal mit der Schlusszeile, auch nach Ausnahmen (${probeCount}x)`);
 expect(has(/^Ziel: Platz 3 "Mono In 3" \(per Name\)$/) && has(/^DA Basis id=1003 /), "Mono In 3: eigener Platz mit Basis 1003");
-expect(has(/^SETZEN 3 abgelehnt: kein Unterobjekt "Inserts" am Kanal id=1003$/), "Setzen nach Suchlauf Mono In 3 nutzt inputAccess[lastProbe.index]");
-expect(has(/^Beobachtung nur auf Platz 6 möglich, der Suchlauf traf Platz 3$/), "Beobachtung nur auf Platz 6");
+expect(has(/^SETZEN 3 abgelehnt: kein Unterobjekt "Inserts" am Kanal id=1003$/), "Setzen nach Suchlauf Mono In 3 nutzt das DirectAccess-Objekt dieses Laufs (Such-Zone, Platz 3)");
+// Bis 2026-10-06: "Beobachtung nur auf Platz 6". Der Parameter-Callback hängt jetzt am Deck-Kanal.
+expect(has(/^Beobachtung nur auf dem Deck-Kanal \("Mono In 6"\) möglich, der Suchlauf traf Platz 3$/), "Beobachtung nur auf dem Deck-Kanal");
+expect(has(/^Deck-Kanal: "Mono In 6" \(bit5=1\), Deck-Suche: auf Platz 6 geschoben, 7 Zonen-Aktionen seit dem Laden$/), "Suchlauf nennt den Deck-Kanal, bit5 und die Deck-Suche");
+expect(has(/^Ziel: Platz 6 "Mono In 6" \(per Name, Deck-Kanal\)$/) && has(/^DA Basis id=100 /), "Vorgabeziel Mono In 6: Platz 6, über den Deck-Kanal (Basis 100)");
 const iBase = idx(/^Suchlauf Fehler: Error: getBaseObjectID verweigert \(Test\)$/);
 expect(iBase >= 0 && lines[iBase + 1] === "--- Suchlauf beendet ---", "Suchlauf mit Ausnahme: Fehlerzeile + Schlusszeile");
 const iTypeErr = idx(/^   44 tag=1886553053 "Program" Fehler: Error: getParameterProcessValueType verweigert \(Test\)$/);
@@ -453,6 +477,9 @@ const A = readyHost();
 expect(A.sent.length === 0, `vor der Aktivierung sendet das Script nichts (Titel und Zustände nur gemerkt) (${A.sent.length} Frames)`);
 A.activate();
 expect(A.sent.length === 0, `mOnActivate sendet nichts (${A.sent.length} Frames)`);
+A.settle();
+expect(actionList(A) === "0RRRRRR" && A.zoneTarget(DECK_ZONE) === "ch6", `Leerlauf: Deck-Zone mit mResetBank und 6x mShiftRight auf Platz 6 (${actionList(A)})`);
+expect(A.zoneActions.every((a) => a.zone === DECK_ZONE), "die Such-Zone wird nie verschoben");
 
 let at = A.sent.length;
 sx(A, 0x10);
@@ -549,7 +576,7 @@ expect(describeAll(deckFrames(A, at)) === '21 "Vox AC 30" | 20 p1 11468 "7.00" |
 
 // Mit Echo des Hosts (am Gerät ungeprüft): 0x20 kommt aus dem Callback, Dedup danach.
 const AE = readyHost({ ownSetsNotify: true });
-AE.activate();
+start(AE);
 sx(AE, 0x10);
 at = AE.sent.length;
 AE.sysex(sysexBytes(0x11, [1, ...v14(12000)]));
@@ -569,7 +596,7 @@ expect(describeAll(deckFrames(AE, at)) === '20 p0 0 "0.0000" | 20 p3 16383 "10.0
 
 // Befund aus dem Review: ohne Echo darf der alte Dedup-Stand eine spätere Meldung nicht schlucken.
 const A2 = readyHost();
-A2.activate();
+start(A2);
 sx(A2, 0x10); // Mid 8192 "5.00" gesendet
 A2.sysex(sysexBytes(0x11, [2, ...v14(12000)])); // Deck zeigt jetzt 7.32, kein Echo
 at = A2.sent.length;
@@ -580,7 +607,7 @@ expect(fr.some((d) => describe(d) === '20 p2 8192 "5.00"') && fr.some((d) => des
 
 // Ohne aktives Preset zeigt "Program" den Namen von Programm 0; ein Wechsel darauf wird verschluckt.
 const A3 = readyHost();
-A3.activate();
+start(A3);
 sx(A3, 0x10);
 at = A3.sent.length;
 logAt = A3.log.length;
@@ -604,15 +631,17 @@ const NOTE_TARGETS = ["ch6.mute", "ch6.slot0.edit", "ch6.slot1.bypass", "ch6.slo
 for (let n = 0; n < NOTE_TARGETS.length; n++) {
 	const sv = svFor(A, 2, n);
 	const bs = sv ? A.bindings.filter((b) => b.sv === sv) : [];
-	expect(sv && sv.inputPort === A.midiInput && bs.length === 1 && bs[0].hv.key === NOTE_TARGETS[n] && !bs[0].toggle,
-		`Kanal 3 Note ${n} -> Value-Binding an ${NOTE_TARGETS[n]}, ohne Toggle (${bs.map((b) => b.hv.key).join() || "keins"})`);
+	// Gebunden an den Wert des Deck-Kanals; der zeigt nach der Deck-Suche auf ch6.
+	expect(sv && sv.inputPort === A.midiInput && bs.length === 1 && bs[0].hv.zoneValue && bs[0].hv.channel.zone.name === DECK_ZONE && bs[0].hv.key === NOTE_TARGETS[n] && !bs[0].toggle,
+		`Kanal 3 Note ${n} -> Value-Binding am Deck-Kanal, jetzt ${NOTE_TARGETS[n]}, ohne Toggle (${bs.map((b) => b.hv.key).join() || "keins"})`);
 }
 expect(!A.surfaceValues.some((s) => s.note && s.note.channel === 2 && s.note.note > 4), "Kanal 3: nur Noten 0..4 gebunden");
 expect(A.bindings.every((b) => !b.toggle), "nirgends setTypeToggle");
 const vw = A.viewers;
-expect(vw.length === 3 && vw.every((v, i) => v.channelIndex === 6 && v.slot === i && v.zone.paramValues === 1 && typeof v.zone.titleHandler === "function") &&
-	new Set(vw.map((v) => v.name)).size === 3, `3 Insert-Viewer auf Platz 6, Slot-Index 0..2, je ein Parameterwert der Zone und ein Titel-Callback (${vw.map((v) => `${v.name}@${v.channelIndex}/${v.slot}`).join(", ")})`);
-expect(A.zones.length === 1 && A.zones[0].inputsOnly && A.channels.length === 32, "eine Eingangszone, includeInputChannels, 32 Plätze");
+expect(vw.length === 3 && vw.every((v, i) => v.zoneName === DECK_ZONE && v.channelKey === "ch6" && v.slot === i && v.zone.paramValues === 1 && typeof v.zone.titleHandler === "function") &&
+	new Set(vw.map((v) => v.name)).size === 3, `3 Insert-Viewer am Deck-Kanal (jetzt ch6), Slot-Index 0..2, je ein Parameterwert der Zone und ein Titel-Callback (${vw.map((v) => `${v.name}@${v.channelKey}/${v.slot}`).join(", ")})`);
+expect(A.zones.length === 2 && A.zones.every((z) => z.inputsOnly) && A.zones[0].name === "Eingaenge" && A.zones[0].channels.length === 32 &&
+	A.zones[1].name === DECK_ZONE && A.zones[1].channels.length === 1 && A.channels.length === 33, "Such-Zone (32 Plätze) und Deck-Zone (1 Platz), beide includeInputChannels");
 const pos = A.buttons.map((b) => `${b.x},${b.y}`);
 expect(new Set(pos).size === pos.length, "keine zwei Tasten auf derselben Surface-Position");
 expect(A.buttons.filter((b) => b.y === 5).length === 5 && !A.buttons.some((b) => b.y === 5 && b.x > 4), "Deck-Tasten in Zeile 5, x 0..4");
@@ -625,8 +654,8 @@ for (let i = 0; i < 32; i++) {
 expect(oldOk, "Kanal 1 Noten 0..31 weiter an der Mute der Eingänge");
 expect([0, 1, 2, 3].every((n) => A.commandBindings.some((c) => c.sv === svFor(A, 1, n))), "Kanal 2 Noten 0..3 weiter an den Preset-Befehlen");
 const withParamCb = A.accesses.filter((a) => a.mOnParameterChange);
-expect(withParamCb.length === 1 && withParamCb[0]._index === 6, "mOnParameterChange nur an Platz 6");
-expect(A.accesses.filter((a) => a.mOnObjectChange).map((a) => a._index).join() === "6", "mOnObjectChange nur an Platz 6");
+expect(withParamCb.length === 1 && withParamCb[0]._channel.zone.name === DECK_ZONE, "mOnParameterChange nur am Deck-Kanal, nicht an den 32 Plätzen der Such-Zone");
+expect(A.accesses.filter((a) => a.mOnObjectChange).every((a) => a._channel.zone.name === DECK_ZONE) && A.accesses.filter((a) => a.mOnObjectChange).length === 1, "mOnObjectChange nur am Deck-Kanal");
 
 const press = (h, ch, note, vel) => {
 	const from = h.sent.length;
@@ -696,32 +725,45 @@ expect(debugLines(A, at).some((l) => /^ÄNDERUNG Slot 3 "TONE3000" tag=100624175
 
 //--- B: Zielkanal falsch -----------------------------------------------------------
 heading("3c Zielkanal falsch, TONE3000 fehlt");
-const B = readyHost({}, { 6: "Mono In 7", 7: "Mono In 6" });
-B.activate();
+// Bis 2026-10-06 hieß "Zielkanal falsch": Platz 6 trägt einen anderen Titel, bit5 = 0. Jetzt
+// folgt der Deck-Kanal dem Namen — mit vertauschten Titeln steht er auf Platz 7 (ch7, dort
+// ohne Inserts): bit5 an, bit6 aus. bit5 = 0 gibt es nur noch, wenn "Mono In 6" fehlt (B).
+const BS = start(readyHost({}, { 6: "Mono In 7", 7: "Mono In 6" }));
+at = BS.sent.length;
+sx(BS, 0x10);
+expect(BS.zoneTarget(DECK_ZONE) === "ch7" && actionList(BS) === "0RRRRRRR" && describeAll(deckFrames(BS, at)) === '21 "" | 22 0x20 | 23 s0 "" | 23 s1 "" | 23 s2 ""',
+	`Titel vertauscht: Deck-Kanal folgt "Mono In 6" auf Platz 7, bit5 an, dort kein TONE3000 (${actionList(BS)} / ${describeAll(deckFrames(BS, at))})`);
+
+// "Mono In 6" gibt es nicht: Der einzige Eingang ist ch6 unter anderem Namen. Nichts zu
+// suchen, der Deck-Kanal bleibt dort; Tasten wirken, Regler und Presets nicht.
+const B = start(readyHost({ inputs: [{ key: "ch6", title: "Gitarre" }] }));
+expect(deckActions(B).length === 0 && B.zoneTarget(DECK_ZONE) === "ch6", `"Mono In 6" fehlt, keine weiteren Eingänge: keine Zonen-Aktion (${actionList(B) || "keine"})`);
 at = B.sent.length;
 sx(B, 0x10);
 fr = deckFrames(B, at);
 const flagsB = fr.find((d) => d.type === 0x22);
-expect(flagsB && (flagsB.flags & 0x20) === 0 && (flagsB.flags & 0x40) === 0x40, `Titel Platz 6 "Mono In 7": bit5 aus, bit6 an (${describeAll(fr)})`);
+expect(flagsB && (flagsB.flags & 0x20) === 0 && (flagsB.flags & 0x40) === 0x40, `Deck-Kanal "Gitarre": bit5 aus, bit6 an (${describeAll(fr)})`);
 at = B.sent.length;
 logAt = B.log.length;
 B.sysex(sysexBytes(0x11, [1, ...v14(9000)]));
 B.sysex(sysexBytes(0x11, [1, ...v14(9100)]));
 expect(hostSets(B, logAt).length === 0, "bit5 aus: 0x11 setzt nichts");
-expect(debugLines(B, at).join(" / ") === 'TONE3000 Bass abgelehnt: Platz 6 heißt "Mono In 7", nicht "Mono In 6"', `bit5 aus: eine Debugzeile, die Wiederholung nicht (${debugLines(B, at).join(" / ")})`);
+expect(debugLines(B, at).join(" / ") === 'TONE3000 Bass abgelehnt: Deck-Kanal heißt "Gitarre", nicht "Mono In 6"', `bit5 aus: eine Debugzeile, die Wiederholung nicht (${debugLines(B, at).join(" / ")})`);
 at = B.sent.length;
 sx(B, 0x12, "HMT");
-expect(hostSets(B, logAt).length === 0 && debugLines(B, at).join() === 'Preset HMT abgelehnt: Platz 6 heißt "Mono In 7", nicht "Mono In 6"', "bit5 aus: 0x12 abgelehnt");
+expect(hostSets(B, logAt).length === 0 && debugLines(B, at).join() === 'Preset HMT abgelehnt: Deck-Kanal heißt "Gitarre", nicht "Mono In 6"', "bit5 aus: 0x12 abgelehnt");
 at = B.sent.length;
-B.setInputTitle(6, "Mono In 6");
-expect(describeAll(deckFrames(B, at)) === "22 0x64", `Titel stimmt wieder: 0x22 mit bit5 unverlangt (${describeAll(deckFrames(B, at))})`);
+B.setInputTitle(0, "Mono In 6");
+expect(describeAll(deckFrames(B, at)) === "22 0x64", `umbenannt in "Mono In 6": 0x22 mit bit5 unverlangt (${describeAll(deckFrames(B, at))})`);
+B.settle();
+expect(deckActions(B).length === 0, "dafür nichts geschoben");
 logAt = B.log.length;
 B.sysex(sysexBytes(0x11, [1, ...v14(9000)]));
 expect(hostSets(B, logAt).length === 1, "danach wirkt 0x11");
 
 //--- C: TONE3000 fehlt in Slot 3 ------------------------------------------------------
 const C = readyHost({ slot3: "leer" });
-C.activate();
+start(C);
 at = C.sent.length;
 sx(C, 0x10);
 expect(describeAll(deckFrames(C, at)) === '21 "" | 22 0x24 | 23 s0 "Tuner" | 23 s1 "H-Delay Mono" | 23 s2 ""',
@@ -743,7 +785,7 @@ C.sysex(sysexBytes(0x11, [1, ...v14(1000)]));
 expect(hostSets(C, logAt).join() === `setParameterProcessValue id=603 tag=${TAG.bass} ${1000 / 16383}`, "danach setzt 0x11 auf das neue Objekt 603");
 
 const C2 = readyHost({ slot3: "Pro-Q 3" });
-C2.activate();
+start(C2);
 at = C2.sent.length;
 sx(C2, 0x10);
 expect(describeAll(deckFrames(C2, at)) === '21 "" | 22 0x24 | 23 s0 "Tuner" | 23 s1 "H-Delay Mono" | 23 s2 "Pro-Q 3"', `anderes Plugin in Slot 3: bit6 aus (${describeAll(deckFrames(C2, at))})`);
@@ -751,7 +793,7 @@ expect(describeAll(deckFrames(C2, at)) === '21 "" | 22 0x24 | 23 s0 "Tuner" | 23
 //--- D: Objekt-IDs wechseln, Fehler des Hosts ----------------------------------------
 heading("3d Objekt-IDs, Fehler des Hosts");
 const D = readyHost();
-D.activate();
+start(D);
 sx(D, 0x10);
 at = D.sent.length;
 D.replacePlugin(3, 503, { removeCallback: true, objectChange: true });
@@ -769,7 +811,7 @@ D.setParam(803, TAG.bass, 0.9);
 expect(describeAll(deckFrames(D, at)) === '20 p1 14745 "9.00" | 20 p2 8192 "5.00"',
 	`still neu geladen, Hand am neuen Plugin: neu aufgelöst, jeder abweichende Regler als 0x20 (${describeAll(deckFrames(D, at))})`);
 const DM = readyHost();
-DM.activate();
+start(DM);
 sx(DM, 0x10);
 DM.replacePlugin(3, 903, { moveOldTo: 4, objectChange: true }); // altes TONE3000 lebt in Slot 4 weiter
 logAt = DM.log.length;
@@ -780,7 +822,7 @@ DM.setParam(403, TAG.bass, 0.1);
 DM.setParam(403, TAG.bass, 0.2);
 expect(deckFrames(DM, at).length === 0, "Bewegung am TONE3000 in Slot 4: nichts gesendet");
 const DQ = readyHost();
-DQ.activate();
+start(DQ);
 sx(DQ, 0x10);
 DQ.replacePlugin(3, 913, { moveOldTo: 4 }); // ohne jeden Callback
 sx(DQ, 0x10);
@@ -832,7 +874,7 @@ heading("3d2 Nachmelden, Dedup-Stand");
 // Slot-Titel kommt VOR dem neuen Objekt im DirectAccess-Baum (wie mOnObjectChange in der
 // FaderBank): bit6 darf nicht auf 0 hängen bleiben.
 const R1 = readyHost();
-R1.activate();
+start(R1);
 sx(R1, 0x10);
 R1.replacePlugin(3, 0, { title: null, removeCallback: true });
 R1.setSlotTitle(6, 2, "");
@@ -855,7 +897,7 @@ expect(describeAll(deckFrames(R1, at)) === "22 0x75", `danach Mute: nur 0x22 (${
 // Dasselbe, aber eine Meldung vom Delay verbraucht das Nachlesen, solange der Baum noch alt
 // ist: Das nächste Zustandsbyte muss "nicht gefunden" trotzdem neu prüfen.
 const R1b = readyHost();
-R1b.activate();
+start(R1b);
 sx(R1b, 0x10);
 R1b.replacePlugin(3, 0, { title: null, removeCallback: true });
 R1b.setSlotTitle(6, 2, "");
@@ -875,7 +917,7 @@ for (const [label, send, want] of [
 	["0x12", (h) => sx(h, 0x12, "HMT"), "Preset HMT abgelehnt: kein TONE3000 in Slot 3"],
 ]) {
 	const R2 = readyHost();
-	R2.activate();
+	start(R2);
 	sx(R2, 0x10);
 	at = R2.sent.length;
 	R2.setSlotTitle(6, 2, "");
@@ -890,7 +932,7 @@ for (const [label, send, want] of [
 // mOnObjectChange kommt, bevor Nuendo umgebaut hat: Das sofort gelesene Objekt gilt nur bis
 // zum nächsten Bedarf. Das alte TONE3000 lebt in Slot 4 weiter und heißt noch so.
 const R5 = readyHost();
-R5.activate();
+start(R5);
 sx(R5, 0x10);
 R5.fireObjectChange(6);
 R5.replacePlugin(3, 923, { moveOldTo: 4 });
@@ -903,7 +945,7 @@ expect(hostSets(R5, logAt).join() === `setParameterProcessValue id=923 tag=${TAG
 // Abfrage ohne TONE3000 (kein 0x20), dann TONE3000 still wieder eingesetzt, gleiche Werte:
 // Das Deck hat keine Reglerwerte, also müssen alle vier kommen.
 const R3 = readyHost();
-R3.activate();
+start(R3);
 sx(R3, 0x10);
 R3.replacePlugin(3, 0, { title: null }); // still entfernt
 at = R3.sent.length;
@@ -917,7 +959,7 @@ expect(describeAll(deckFrames(R3, at)) === '22 0x64 | 20 p0 8178 "0.4992" | 20 p
 
 // Lesefehler in der Abfrage: Für diesen Regler hat das Deck keinen Wert, der Dedup auch nicht.
 const R6 = readyHost();
-R6.activate();
+start(R6);
 sx(R6, 0x10);
 R6.fail("getParameterProcessValue", { times: 2, when: (a) => a[2] === TAG.mid });
 at = R6.sent.length;
@@ -938,9 +980,16 @@ E.sysex(sysexBytes(0x11, [1, ...v14(9000)]));
 expect(deckFrames(E, at).length === 0 && debugLines(E, at).join(" / ") === "ABFRAGE vor der Aktivierung: Antwort folgt mit der Aktivierung / TONE3000 Bass abgelehnt: noch kein activeMapping (Seite nie aktiviert)",
 	`vor der Aktivierung: Abfrage gemerkt (eine Zeile), 0x11 abgelehnt (${debugLines(E, at).join(" / ")})`);
 expect(hostSets(E, logAt).length === 0, "vor der Aktivierung: nichts gesetzt");
+// Bis 2026-10-06 beantwortete die Aktivierung die Abfrage sofort (Platz 6 war fest
+// gebunden). Jetzt steht die Deck-Zone dabei noch auf Platz 0; eine Antwort zeigte den
+// falschen Kanal. Sie kommt mit dem Ende der ersten Deck-Suche.
 at = E.sent.length;
 E.activate();
-expect(describeAll(deckFrames(E, at)) === QUERY_1, `Aktivierung beantwortet die ausstehende Abfrage, sonst nichts (${describeAll(deckFrames(E, at))})`);
+sx(E, 0x10);
+expect(E.sent.length === at, `Aktivierung, Deck-Kanal noch auf Platz 0: Abfrage bleibt gemerkt, auch eine weitere, ohne Debugzeile (${E.sent.length - at} Frames)`);
+E.settle();
+expect(describeAll(deckFrames(E, at)) === QUERY_1 && tunerFrames(E, at).length === 1,
+	`Ende der ersten Deck-Suche beantwortet die ausstehende Abfrage, sonst nichts — ihr Bericht findet danach nichts Neues (${describeAll(deckFrames(E, at))})`);
 
 const F2 = readyHost({ objectChangeOnActivate: true });
 F2.activate();
@@ -954,19 +1003,26 @@ F.setInputTitles();
 F.setSlotTitle(6, 0, "Tuner");
 F.setSlotTitle(6, 1, "H-Delay Mono");
 F.setSlotTitle(6, 2, "TONE3000");
-fr = deckFrames(F, at);
+// Die Titel kommen erst nach der Aktivierung: Der Deck-Kanal steht da noch auf Platz 0
+// ("Stereo In 1-2", ohne Inserts), die Slotnamen von ch6 erreichen ihn erst nach dem Schieben.
+const fEarly = describeAll(deckFrames(F, at));
+const fAt = F.sent.length;
+F.settle();
+fr = deckFrames(F, fAt);
 const kinds = fr.map((d) => (d.type === 0x20 ? `20/${d.p}` : d.type === 0x23 ? `23/${d.slot}` : d.type.toString(16)));
-expect(new Set(kinds).size === kinds.length && kinds.length === 9 && kinds.includes("22") && kinds.includes("21"),
-	`Titel nach der Aktivierung: jede Meldung genau einmal (${describeAll(fr)})`);
+expect(fEarly === '22 0x00 | 21 ""' && new Set(kinds).size === kinds.length && kinds.length === 9 && fr.find((d) => d.type === 0x22).flags === 0x60 && fr.find((d) => d.type === 0x21).name === "Calfinornia",
+	`Titel nach der Aktivierung: erst 0x22 ohne bit5 (Platz 0), nach der Deck-Suche jede Meldung genau einmal, bit5 und bit6 (${fEarly} / ${describeAll(fr)})`);
 at = F.sent.length;
+const fActions = deckActions(F).length;
 F.setInputTitles();
 F.setSlotTitle(6, 2, "TONE3000");
-expect(F.sent.length === at, "dieselben Titel nochmals: nichts gesendet");
+F.settle();
+expect(F.sent.length === at && deckActions(F).length === fActions, "dieselben Titel nochmals: nichts gesendet, nichts geschoben");
 
 //--- G: kaputte Frames ------------------------------------------------------------------
 heading("3f kaputte Frames");
 const G = readyHost();
-G.activate();
+start(G);
 at = G.sent.length;
 logAt = G.log.length;
 G.sysex([0xf0, 0x7d, 0x11, 0x01, 0xf7]);
@@ -1013,7 +1069,7 @@ for (const raw of docBlock ? docBlock[1].split(/\r?\n/) : []) {
 expect(steps.length >= 9, `Beispielsitzung gefunden (${steps.length} Schritte vom Deck)`);
 expect(steps.some((s) => s.guitar) && steps.some((s) => s.deck && s.deck[2] === 0x13), `Beispielsitzung zeigt die Stimmanzeige (${steps.filter((s) => s.guitar).length} Gitarren-Schritte)`);
 const X = readyHost();
-X.activate();
+start(X);
 const hexLine = (b) => b.map((x) => x.toString(16).toUpperCase().padStart(2, "0")).join(" ");
 for (const s of steps) {
 	const from = X.sent.length;
@@ -1037,7 +1093,7 @@ const E1 = (cent, inTune = false) => ({ midi: 28, cent, inTune });
 const muteSet = (id, v) => `setParameterProcessValue id=${id} tag=${TUNER_TAG.mute} ${v}`;
 
 const T = readyHost();
-T.activate();
+start(T);
 sx(T, 0x10);
 at = T.sent.length;
 T.tunerInput(TU, E1(-16));
@@ -1110,7 +1166,7 @@ expect(tq2.length === 10 && tq2[9].type === 0x24 && (tq2[9].flags & 0x1c) === 0x
 
 // Mute im Plugin von Hand aufgehoben: gemeldet, nicht wieder gesetzt. Mit Echo des Hosts.
 const TE = readyHost({ ownSetsNotify: true });
-TE.activate();
+start(TE);
 sx(TE, 0x10);
 at = TE.sent.length;
 tunerMode(TE, 1);
@@ -1126,7 +1182,7 @@ expect(tuner24(TE, at) === '24 0x08 -49 0 "--"' && hostSets(TE, logAt).length ==
 
 // Klartexte, die nicht dem Normalfall entsprechen
 const TX = readyHost();
-TX.activate();
+start(TX);
 tunerMode(TX, 1);
 const px = (tag) => TX.param(TU, tag);
 at = TX.sent.length;
@@ -1150,7 +1206,7 @@ expect(Math.max(...TX.sent.filter((f) => f[2] === 0x24).map((f) => f.length)) ==
 heading("4b Kein Tuner, Tuner wechselt");
 for (const [label, slot1] of [["GTR Tuner Mono", "gtr"], ["Slot 1 leer", "leer"]]) {
 	const NG = readyHost({ slot1 });
-	NG.activate();
+	start(NG);
 	const ngFrom = NG.sent.length;
 	at = NG.sent.length;
 	logAt = NG.log.length;
@@ -1168,7 +1224,7 @@ for (const [label, slot1] of [["GTR Tuner Mono", "gtr"], ["Slot 1 leer", "leer"]
 		`${label}: bit3 = 0 in Abfrage und auf 0x13, nichts gesetzt, keine Debugzeile (${q} / ${on} / ${tuner24(NG, at)})`);
 }
 const NT = readyHost({ slot1: "gtr" });
-NT.activate();
+start(NT);
 tunerMode(NT, 1);
 at = NT.sent.length;
 logAt = NT.log.length;
@@ -1177,14 +1233,14 @@ NT.setSlotTitle(6, 0, "Tuner");
 expect(hostSets(NT, logAt).join(" / ") === muteSet(461, 1) && tuner24(NT, at) === '24 0x1c -49 0 "--"' && describeAll(deckFrames(NT, at)) === '23 s0 "Tuner"',
 	`im Modus Tuner in Slot 1 eingesetzt: Slot-Titel löst neu auf, Mute an, 0x24 (${hostSets(NT, logAt).join(" / ")} | ${tuner24(NT, at)})`);
 const NP = readyHost();
-NP.activate();
+start(NP);
 NP.replacePlugin(1, 462, { title: "Tuner", kind: "plain" }); // heißt so, hat aber keine Tuner-Parameter
 at = NP.sent.length;
 logAt = NP.log.length;
 tunerMode(NP, 1);
 expect(hostSets(NP, logAt).length === 0 && tuner24(NP, at) === '24 0x04 0 0 ""', `Plugin "Tuner" ohne "Mute"/"Note"/"Cent": nicht gefunden, nichts gesetzt (${tuner24(NP, at)})`);
 const NL = readyHost();
-NL.activate();
+start(NL);
 NL.replacePlugin(1, 463, { title: "Stimmgerät", kind: "tuner" }); // übersetzter Titel
 at = NL.sent.length;
 logAt = NL.log.length;
@@ -1192,7 +1248,7 @@ tunerMode(NL, 1);
 expect(hostSets(NL, logAt).join() === muteSet(463, 1) && tuner24(NL, at) === '24 0x1c -49 0 "--"', `anderer Titel, Klassenkennung des Steinberg-Tuners: gefunden (${tuner24(NL, at)})`);
 
 const TW = readyHost();
-TW.activate();
+start(TW);
 sx(TW, 0x10);
 tunerMode(TW, 1);
 TW.replacePlugin(1, 471, { title: "Tuner" }); // still neu geladen, kein Callback
@@ -1215,7 +1271,7 @@ TW.setSlotTitle(6, 0, "Pro-Q 3");
 expect(tuner24(TW, at) === '24 0x04 0 0 ""', `anderes Plugin in Slot 1 (Slot-Titel): bit3 aus (${tuner24(TW, at)})`);
 
 const TM = readyHost();
-TM.activate();
+start(TM);
 tunerMode(TM, 1);
 TM.replacePlugin(1, 481, { title: "Tuner", moveOldTo: 5, objectChange: true }); // alter Tuner lebt in Slot 5 weiter, stumm
 at = TM.sent.length;
@@ -1230,7 +1286,7 @@ expect(sameSet(hostSets(TM, logAt), [muteSet(481, 0), muteSet(TU, 0)]) && tuner2
 expect(TM.param(TU, TUNER_TAG.mute).value === 0 && TM.param(481, TUNER_TAG.mute).value === 0, "danach ist kein Tuner mehr stumm");
 
 const TR = readyHost();
-TR.activate();
+start(TR);
 tunerMode(TR, 1);
 TR.tunerInput(TU, E1(-16));
 TR.replacePlugin(1, 491, { title: "Tuner", removeCallback: true }); // mOnObjectWillBeRemoved, dann ohne Callback
@@ -1246,7 +1302,7 @@ expect(TR.calls.total === tCalls, `danach kosten Meldungen vom Delay nichts (${T
 heading("4c Sicherheit, Aktivierung, kaputte Frames");
 const S = readyHost();
 S.param(TU, TUNER_TAG.mute).value = 1; // Mute im Projekt gespeichert, Deck war weg
-S.activate();
+start(S);
 at = S.sent.length;
 logAt = S.log.length;
 sx(S, 0x01);
@@ -1264,23 +1320,23 @@ sx(P0, 0x10);
 expect(debugLines(P0, at).join(" / ") === "TUNER vor der Aktivierung: Modus folgt mit der Aktivierung / ABFRAGE vor der Aktivierung: Antwort folgt mit der Aktivierung" &&
 	hostSets(P0, logAt).length === 0 && tunerFrames(P0, at).length === 0, `vor der Aktivierung: 0x13 gemerkt (eine Zeile), nichts gesetzt (${debugLines(P0, at).join(" / ")})`);
 at = P0.sent.length;
-P0.activate();
+start(P0);
 const act = P0.sent.slice(at).map(decodeFrame);
 expect(hostSets(P0, logAt).join() === muteSet(TU, 0) && act.map((d) => d.type.toString(16)).join(" ") === "24 20 20 20 20 21 22 23 23 23 24" && describe(act[0]) === '24 0x08 -49 0 "--"',
-	`Aktivierung: zuletzt gemerkter Modus (aus) zuerst, Mute aufgehoben, dann die Abfrage (${act.map((d) => d.type.toString(16)).join(" ")})`);
+	`Aktivierung und erste Deck-Suche: zuletzt gemerkter Modus (aus) zuerst, Mute am Tuner von ch6 aufgehoben, dann die Abfrage (${act.map((d) => d.type.toString(16)).join(" ")})`);
 at = P0.sent.length;
-P0.activate();
-expect(P0.sent.length === at, "zweite Aktivierung: nichts mehr ausstehend");
+start(P0);
+expect(P0.sent.length === at, "zweite Aktivierung: nichts mehr ausstehend, nichts geschoben");
 
-const B4 = readyHost({}, { 6: "Mono In 7", 7: "Mono In 6" });
-B4.activate();
+// bit5 = 0: Der einzige Eingang ist ch6 (mit dem Tuner) unter anderem Namen.
+const B4 = start(readyHost({ inputs: [{ key: "ch6", title: "Gitarre" }] }));
 logAt = B4.log.length;
 tunerMode(B4, 1);
 tunerMode(B4, 0);
 expect(hostSets(B4, logAt).join(" / ") === `${muteSet(TU, 1)} / ${muteSet(TU, 0)}`, "0x13 wirkt wie die Tasten ohne Titelprüfung (bit5 = 0)");
 
 const GM = readyHost();
-GM.activate();
+start(GM);
 at = GM.sent.length;
 logAt = GM.log.length;
 GM.sysex([0xf0, 0x7d, 0x13, 0xf7]);
@@ -1308,6 +1364,296 @@ GM.tunerInput(TU, E1(-16));
 expect(/^Tuner Fehler: Error: getParameterDisplayValue verweigert/.test(debugLines(GM, at).join()) && tuner24(GM, at) === '24 0x1d -16 1 "E"' && GM.callbackErrors.length === 0,
 	`Fehler im Tuner-Callback: abgefangen, eine Debugzeile, die nächste Meldung sendet (${debugLines(GM, at).join(" / ")} | ${tuner24(GM, at)})`);
 
+//==============================================================================
+// Teil 5: Der Deck-Kanal folgt dem Namen (Befund 2026-10-06)
+//==============================================================================
+const NUM_INPUTS = 32;
+const flagsOf = (frames) => frames.filter((d) => d.type === 0x22).map((d) => d.flags);
+const bit5Seq = (frames) => flagsOf(frames).map((f) => (f & 0x20 ? 1 : 0)).join("");
+const lastFlags = (h, from = 0) => {
+	const f = flagsOf(deckFrames(h, from));
+	return f.length ? f[f.length - 1] : -1;
+};
+const hex2 = (n) => "0x" + n.toString(16).padStart(2, "0");
+
+//--- a: ein einziger Eingang, "Mono In 6" auf Platz 0 (so am Gerät 2026-10-06) ---------
+heading("5a Deck-Kanal: einziger Eingang Mono In 6 auf Platz 0");
+const ONE = [{ key: "ch6", title: "Mono In 6" }];
+const S1 = readyHost({ inputs: ONE });
+at = S1.sent.length;
+sx(S1, 0x10); // vor der Aktivierung
+S1.activate();
+expect(describeAll(deckFrames(S1, at)) === QUERY_1, `Deck-Zone steht schon auf "Mono In 6": die Aktivierung beantwortet die ausstehende Abfrage sofort, bit5 an (${describeAll(deckFrames(S1, at))})`);
+S1.settle();
+expect(deckActions(S1).length === 0 && S1.zoneTarget(DECK_ZONE) === "ch6", `nichts zu schieben: keine Zonen-Aktion (${actionList(S1) || "keine"})`);
+logAt = S1.log.length;
+S1.sysex(sysexBytes(0x11, [1, ...v14(12000)]));
+sx(S1, 0x12, "HMT");
+sets = hostSets(S1, logAt);
+expect(sets.length === 2 && sets[0] === `setParameterProcessValue id=403 tag=${TAG.bass} ${12000 / 16383}` && sets[1] === `setParameterDisplayValue id=403 tag=${TAG.program} "HMT"`,
+	`0x11 und 0x12 wirken auf TONE3000 von "Mono In 6" (${sets.join(" / ")})`);
+at = S1.sent.length;
+S1.note(2, 0, 127);
+S1.note(2, 4, 127);
+S1.note(2, 2, 0);
+expect(S1.hostValue("ch6.mute") === 1 && S1.hostValue("ch6.slot2.edit") === 1 && S1.hostValue("ch6.slot1.bypass") === 0 && hex2(lastFlags(S1, at)) === "0x71",
+	`Tasten auf Kanal 3 wirken auf "Mono In 6": Mute, TONE3000-Fenster, Delay-Bypass aus (${describeAll(deckFrames(S1, at))})`);
+S1.note(0, 0, 0); // Kanal 1 Note 0 = Platz 0 der Such-Zone, derselbe Kanal
+expect(S1.hostValue("ch6.mute") === 0 && (lastFlags(S1, at) & 1) === 0, "Kanal 1 Note 0 (Platz 0) schaltet dieselbe Mute");
+logAt = S1.log.length;
+at = S1.sent.length;
+tunerMode(S1, 1);
+expect(hostSets(S1, logAt).join() === muteSet(TU, 1) && tuner24(S1, at) === '24 0x1c -49 0 "--"', `0x13 1: Mute am Tuner von "Mono In 6" (${tuner24(S1, at)})`);
+tunerMode(S1, 0);
+
+//--- g: Beobachtung, wenn der Zielkanal auf Platz 0 steht -------------------------------
+heading("5g Beobachtung am Deck-Kanal");
+at = S1.sent.length;
+sx(S1, 0x02);
+sx(S1, 0x03);
+S1.setParam(403, TAG.mid, 0.3);
+sx(S1, 0x04);
+let pl = debugLines(S1, at);
+expect(pl.includes("Eingang 0: \"Mono In 6\" mute=0") && pl.includes("1 von 32 Plätzen belegt") && pl.includes("Ziel: Platz 0 \"Mono In 6\" (per Name, Deck-Kanal)"),
+	"Suchlauf: Mono In 6 auf Platz 0, über den Deck-Kanal");
+expect(pl.includes("--- Beobachtung läuft ---") && pl.some((l) => /^ÄNDERUNG Slot 3 "TONE3000" tag=1006241759 "toneMid" = "3\.00" roh 0\.3$/.test(l)) && describeAll(deckFrames(S1, at)) === '20 p2 4915 "3.00"',
+	`Beobachtung meldet die Änderung am Zielkanal auf Platz 0, der Betrieb sendet 0x20 (${describeAll(deckFrames(S1, at))})`);
+// Die Deck-Zone zieht nach dem Suchlauf weiter (Kanal davor eingefügt, noch nicht neu gesucht):
+// Der Callback meldet jetzt einen anderen Kanal, also keine Beobachtung.
+const G5 = start(readyHost());
+sx(G5, 0x02);
+G5.insertInput(0, "Neu");
+at = G5.sent.length;
+sx(G5, 0x03);
+pl = debugLines(G5, at);
+expect(pl.length === 1 && /^Beobachtung nicht möglich: Der Deck-Kanal zeigt seit dem Suchlauf einen anderen Kanal \(id=1005 statt 100\), erst neu suchen$/.test(pl[0]), `Deck-Zone seit dem Suchlauf weitergezogen: Beobachtung abgelehnt (${pl.join(" / ")})`);
+G5.settle();
+at = G5.sent.length;
+sx(G5, 0x02);
+sx(G5, 0x03);
+expect(debugLines(G5, at).includes("--- Beobachtung läuft ---"), "nach der Deck-Suche und einem neuen Suchlauf geht sie wieder");
+sx(G5, 0x04);
+
+//--- b: 32 Eingänge wie im Projekt vom 2026-10-01 ---------------------------------------
+heading("5b 32 Eingänge, Mono In 6 auf Platz 6");
+const S2 = readyHost();
+at = S2.sent.length;
+S2.activate();
+expect(S2.sent.length === at && deckActions(S2).length === 0, "Aktivierung: nichts gesendet, noch nicht geschoben (das tut der Leerlauf)");
+S2.idle(1);
+expect(actionList(S2) === "0RRRRRR", `erster Leerlauf-Durchgang: mResetBank, 6x mShiftRight (${actionList(S2)})`);
+S2.settle();
+fr = deckFrames(S2, at);
+expect(actionList(S2) === "0RRRRRR" && S2.zoneTarget(DECK_ZONE) === "ch6" && describeAll(fr) === '23 s0 "Tuner" | 23 s1 "H-Delay Mono" | 23 s2 "TONE3000" | 22 0x64 | 20 p0 8178 "0.4992" | 20 p1 8192 "5.00" | 20 p2 8192 "5.00" | 20 p3 8192 "5.00" | 21 "Calfinornia"',
+	`danach nur Warten auf den Titel, dann der Bericht: Slotnamen, Zustände mit bit5/bit6, Regler, Preset (${describeAll(fr)})`);
+expect(S2.zoneActions.every((a) => a.at === S2.zoneActions[0].at), "alle Zonen-Aktionen im ersten Durchgang, keine danach");
+
+//--- c: Eingänge ändern sich zur Laufzeit -----------------------------------------------
+heading("5c Eingänge ändern sich zur Laufzeit");
+const C5 = start(readyHost());
+sx(C5, 0x10);
+let c0 = deckActions(C5).length;
+at = C5.sent.length;
+C5.insertInput(2, "Mono In 1b");
+const cNow = deckFrames(C5, at);
+C5.settle();
+fr = deckFrames(C5, at);
+expect(cNow.some((d) => d.type === 0x22 && !(d.flags & 0x20)), `Kanal vor "Mono In 6" eingefügt: sofort 0x22 ohne bit5 (Deck-Zone zeigt jetzt "Mono In 5") (${describeAll(cNow)})`);
+expect(C5.zoneTarget(DECK_ZONE) === "ch6" && actionList(C5, c0) === "0RRRRRRR" && lastFlags(C5, at) === 0x64,
+	`… dann auf Platz 7 geschoben, bit5 wieder an (${actionList(C5, c0)} / ${bit5Seq(fr)})`);
+logAt = C5.log.length;
+C5.sysex(sysexBytes(0x11, [2, ...v14(5000)]));
+expect(hostSets(C5, logAt).join() === `setParameterProcessValue id=403 tag=${TAG.mid} ${5000 / 16383}`, "danach wirkt 0x11 wieder auf ch6");
+c0 = deckActions(C5).length;
+at = C5.sent.length;
+C5.removeInput(0);
+C5.settle();
+fr = deckFrames(C5, at);
+expect(C5.zoneTarget(DECK_ZONE) === "ch6" && actionList(C5, c0) === "0RRRRRR" && bit5Seq(fr).includes("0") && lastFlags(C5, at) === 0x64,
+	`Kanal davor entfernt: kurz bit5 = 0, dann zurück auf Platz 6 (${actionList(C5, c0)} / ${bit5Seq(fr)})`);
+c0 = deckActions(C5).length;
+at = C5.sent.length;
+C5.renameInput("ch6", "Gitarre");
+C5.renameInput("ch7", "Mono In 6");
+C5.settle();
+fr = deckFrames(C5, at);
+expect(C5.zoneTarget(DECK_ZONE) === "ch7" && actionList(C5, c0) === "0RRRRRRR" && bit5Seq(fr).startsWith("0") && lastFlags(C5, at) === 0x20,
+	`umbenannt ("Mono In 6" heißt jetzt ch7): Deck folgt dem Namen auf Platz 7 (${actionList(C5, c0)} / ${describeAll(fr)})`);
+c0 = deckActions(C5).length;
+at = C5.sent.length;
+C5.renameInput("ch7", "Mono In 7");
+C5.renameInput("ch6", "Mono In 6");
+C5.settle();
+expect(C5.zoneTarget(DECK_ZONE) === "ch6" && actionList(C5, c0) === "0RRRRRR" && lastFlags(C5, at) === 0x64, `zurück umbenannt: wieder Platz 6 (${actionList(C5, c0)})`);
+// Im Tuner-Modus: Der Tuner folgt dem Deck-Kanal, der von ch6 bleibt stumm, bis der Modus endet.
+tunerMode(C5, 1);
+at = C5.sent.length;
+logAt = C5.log.length;
+C5.insertInput(0, "Neu");
+const tAway = tuner24(C5, at);
+C5.settle();
+expect(tAway === '24 0x04 0 0 ""' && (tunerFrames(C5, at).pop().flags & 0x1c) === 0x1c && hostSets(C5, logAt).length === 0,
+	`Tuner-Modus: Deck-Zone verlässt ch6 -> 0x24 ohne Tuner; zurück -> Tuner gefunden und weiter stumm, nichts neu gesetzt (${tuner24(C5, at)})`);
+logAt = C5.log.length;
+tunerMode(C5, 0);
+expect(hostSets(C5, logAt).join() === muteSet(TU, 0), "Modus aus: Mute am Tuner von ch6 aufgehoben");
+expect(C5.callbackErrors.length === 0, "keine Ausnahme");
+
+//--- d: "Mono In 6" fehlt ---------------------------------------------------------------
+heading("5d Mono In 6 fehlt: bit5 = 0, keine Dauer-Schieberei");
+const D1 = start(readyHost({ inputs: [{ key: "ch0", title: "Stereo In 1-2" }, { key: "ch6", title: "Gitarre" }] }));
+D1.idle(400); // 20 s Leerlauf
+at = D1.sent.length;
+sx(D1, 0x10);
+expect(deckActions(D1).length === 0 && (lastFlags(D1, at) & 0x20) === 0, `zwei Eingänge, keiner heißt so: keine einzige Zonen-Aktion, auch nach 20 s, bit5 = 0 (${actionList(D1) || "keine"})`);
+const D2 = start(readyHost({}, { 6: "Gitarre" }));
+const d2n = deckActions(D2).length;
+D2.idle(400);
+at = D2.sent.length;
+sx(D2, 0x10);
+expect(actionList(D2) === "0" + "R".repeat(NUM_INPUTS) + "R" && deckActions(D2).length === d2n && (lastFlags(D2, at) & 0x20) === 0,
+	`32 Eingänge, keiner heißt so: Rückfall einmal bis zum Ende (${d2n} Aktionen), dann 20 s Ruhe, bit5 = 0`);
+at = D2.sent.length;
+D2.sysex(sysexBytes(0x11, [1, ...v14(9000)]));
+expect(debugLines(D2, at).join() === 'TONE3000 Bass abgelehnt: Deck-Kanal heißt "Mono In 31", nicht "Mono In 6"', `Regler gesperrt (${debugLines(D2, at).join()})`);
+D2.setInputTitle(6, "Mono In 6");
+D2.settle();
+expect(D2.zoneTarget(DECK_ZONE) === "ch6" && actionList(D2, d2n) === "0RRRRRR" && lastFlags(D2) === 0x64, `wieder da: neuer Anlass, auf Platz 6 geschoben (${actionList(D2, d2n)})`);
+const D3 = start(readyHost({ zoneBroken: true })); // Nuendo bewegt die Zone nicht
+D3.idle(400);
+at = D3.sent.length;
+sx(D3, 0x10);
+expect(actionList(D3) === "0RRRRRR".repeat(3) && (lastFlags(D3, at) & 0x20) === 0, `Zone bewegt sich nicht: drei Runden, dann aufgegeben und Ruhe (${deckActions(D3).length} Aktionen)`);
+expect(D3.callbackErrors.length === 0 && D2.callbackErrors.length === 0 && D1.callbackErrors.length === 0, "keine Ausnahme");
+
+//--- e: mehr als 32 Eingänge, Ziel auf Platz 40 -------------------------------------------
+heading("5e mehr Eingänge als die Such-Zone: Rückfall");
+const BIG = Array.from({ length: 45 }, (_, i) => (i === 40 ? { key: "ch6", title: "Mono In 6" } : { key: `in${i}`, title: `Eingang ${i}` }));
+const E5 = readyHost({ inputs: BIG });
+at = E5.sent.length;
+logAt = E5.log.length;
+tunerMode(E5, 1);
+sx(E5, 0x10);
+E5.activate();
+E5.settle();
+fr = deckFrames(E5, at);
+expect(E5.zoneTarget(DECK_ZONE) === "ch6" && actionList(E5) === "0" + "R".repeat(NUM_INPUTS) + "R".repeat(8), `Platz 40: Sprung auf Platz 32, dann 8 Einzelschritte (${deckActions(E5).length} Aktionen)`);
+expect(bit5Seq(fr) === "01" && lastFlags(E5, at) === 0x64,
+	`die ausstehende Abfrage wird mit dem Rückfall beantwortet (bit5 = 0), sein Ende meldet bit5 (${bit5Seq(fr)})`);
+expect(hostSets(E5, logAt).join() === muteSet(TU, 1) && (tunerFrames(E5, at).pop().flags & 0x1c) === 0x1c,
+	`vor der Aktivierung gemerkter Tuner-Modus: am Ende der Tuner von ch6 stumm (${tuner24(E5, at)})`);
+tunerMode(E5, 0);
+logAt = E5.log.length;
+E5.sysex(sysexBytes(0x11, [3, ...v14(3000)]));
+expect(hostSets(E5, logAt).join() === `setParameterProcessValue id=403 tag=${TAG.treble} ${3000 / 16383}`, "0x11 wirkt auf ch6 auf Platz 40");
+at = E5.sent.length;
+sx(E5, 0x02);
+sx(E5, 0x03);
+E5.setParam(403, TAG.input, 0.25);
+sx(E5, 0x04);
+pl = debugLines(E5, at);
+expect(pl.includes("Ziel: Deck-Kanal \"Mono In 6\" (per Name, nicht unter den 32 Plätzen)") && pl.some((l) => /^ÄNDERUNG Slot 3 "TONE3000" tag=1368699459 "inputLevel"/.test(l)),
+	"Suchlauf und Beobachtung über den Deck-Kanal, auch jenseits der Such-Zone");
+let e0 = deckActions(E5).length;
+at = E5.sent.length;
+E5.insertInput(35, "Eingang 35b"); // hinter der Such-Zone: nur der Deck-Kanal merkt es
+E5.settle();
+fr = deckFrames(E5, at);
+// Der Objektwechsel kommt im Stub vor dem Titel: Das erste 0x22 trägt noch bit5 (aber kein bit6).
+expect(E5.zoneTarget(DECK_ZONE) === "ch6" && actionList(E5, e0) === "0" + "R".repeat(NUM_INPUTS) + "R".repeat(9) && bit5Seq(fr).includes("0") && lastFlags(E5, at) === 0x64,
+	`Kanal auf Platz 35 eingefügt: Deck-Kanal verlässt das Ziel, Rückfall findet es auf Platz 41 (${bit5Seq(fr)})`);
+e0 = deckActions(E5).length;
+E5.idle(400);
+expect(deckActions(E5).length === e0 && E5.callbackErrors.length === 0, "danach Ruhe");
+
+//--- f: Zonen-Aktionen stoßen keine neue Suche an --------------------------------------------
+heading("5f keine Selbstauslösung");
+for (const [label, opts] of [
+	["Meldungen nach mOnIdle (Vorgabe)", {}],
+	["Meldungen mitten in trigger()", { zoneDelivery: "sofort" }],
+	["ohne Echo, nur echte Änderungen", { zoneEcho: false }],
+]) {
+	const h = start(readyHost(opts));
+	const n = deckActions(h).length;
+	const sentAt = h.sent.length;
+	h.idle(1200); // 60 s Leerlauf
+	h.fireObjectChange(6); // ein Objektwechsel nach der Suche
+	h.setInputTitles(); // dieselben Titel noch einmal
+	h.idle(100);
+	expect(n === 7 && deckActions(h).length === 7 && h.sent.length === sentAt && h.callbackErrors.length === 0,
+		`${label}: 7 Aktionen, danach 60 s Leerlauf, Objektwechsel und gleiche Titel ohne Aktion und ohne Frame (${deckActions(h).length}, ${h.sent.length - sentAt} Frames)`);
+}
+// Ein echter Anlass mitten in der Suche: von vorn, mit frischem Platz, und dann Ruhe.
+const F5 = readyHost();
+F5.activate();
+F5.idle(1); // Runde 1 geschoben, wartet auf den Titel
+F5.insertInput(0, "Neu 0");
+F5.settle();
+F5.idle(400);
+expect(F5.zoneTarget(DECK_ZONE) === "ch6" && actionList(F5) === "0RRRRRR" + "0RRRRRRR" && lastFlags(F5) === 0x64,
+	`Kanal eingefügt, während die Suche wartet: neu gesucht, auf Platz 7, dann Ruhe (${actionList(F5)})`);
+// Ein Host, der die Zone nicht bewegt und bei jedem mResetBank einen Titel der Such-Zone ändert
+// (als stieße jede Aktion einen neuen Anlass an): Neustarts sind gedeckelt, das Aufgeben
+// schiebt nicht, danach Ruhe.
+const Z5 = readyHost({ zoneBroken: true });
+const z5Action = Z5.zones.find((z) => z.name === DECK_ZONE).mAction.mResetBank;
+const z5Reset = z5Action.trigger;
+let z5Toggle = 0;
+z5Action.trigger = (m) => {
+	z5Reset(m);
+	Z5.setInputTitle(20, ++z5Toggle % 2 ? "Mono In 20x" : "Mono In 20");
+};
+start(Z5);
+const z5n = deckActions(Z5).length;
+Z5.idle(400);
+expect(z5n === 7 * 9 && deckActions(Z5).length === z5n && (lastFlags(Z5) & 0x20) === 0 && Z5.callbackErrors.length === 0,
+	`jede Aktion ein neuer Anlass: erste Runde und 8 Neustarts, dann aufgegeben und Ruhe (${z5n} Aktionen)`);
+// Nuendo meldet den Titel beim Schieben erst spät (oder nie): Das Basisobjekt per DirectAccess
+// sagt, dass das Ziel erreicht ist; sein Name gilt, bit5 kommt ohne den Callback.
+const L5 = readyHost();
+const lateTitle = L5.channels.find((c) => c.zone.name === DECK_ZONE);
+const realTitle = lateTitle.mOnTitleChange;
+const held = [];
+lateTitle.mOnTitleChange = (...args) => held.push(args);
+start(L5);
+L5.idle(400);
+expect(actionList(L5) === "0RRRRRR" && hex2(lastFlags(L5)) === "0x64", `Titel-Callback bleibt aus: per DirectAccess angekommen, eine Runde, bit5 trotzdem an (${actionList(L5)})`);
+lateTitle.mOnTitleChange = realTitle;
+at = L5.sent.length;
+L5.invoke("später Titel", realTitle, ...held[held.length - 1]);
+L5.idle(400);
+expect(actionList(L5) === "0RRRRRR" && L5.sent.length === at, `der späte Titel ist derselbe: kein Frame, kein neues Schieben (${describeAll(deckFrames(L5, at))})`);
+// Ein veralteter Titel kommt nach dem Ziel (Reihenfolge vertauscht): Der Deck-Kanal verlässt
+// das Ziel nur scheinbar; die Suche findet ihn per DirectAccess am Platz und schiebt nicht.
+at = L5.sent.length;
+L5.invoke("veralteter Titel", realTitle, L5.device, L5.mapping, "Mono In 5");
+L5.idle(400);
+expect(actionList(L5) === "0RRRRRR" && bit5Seq(deckFrames(L5, at)) === "01", `veralteter Titel danach: kurz bit5 = 0, dann per DirectAccess wieder 1, ohne Schieben (${describeAll(deckFrames(L5, at))})`);
+
+heading("5h Stub-Selbsttest: Zonen-Aktionen");
+// Selbsttest des Stubs: Bankbefehle einer 32 Plätze breiten Zone über 45 Eingänge, Ränder,
+// und was der Position folgt (Titel, Bindung, DirectAccess, Viewer am Deck-Kanal).
+const ZS = readyHost({ inputs: BIG });
+ZS.activate();
+const sz = ZS.zones.find((z) => z.name === "Eingaenge");
+const zsTitles = [];
+sz.channels[0].mOnTitleChange = (dev, map, title) => zsTitles.push(title);
+const zsStep = (name) => {
+	sz.mAction[name].trigger(ZS.mapping);
+	return sz.offset;
+};
+const zsSeq = ["mNextBank", "mNextBank", "mPrevBank", "mShiftRight", "mShiftLeft", "mShiftLeft", "mNextBank", "mResetBank"].map(zsStep);
+const zsBinding = ZS.bindings.find((b) => b.hv.zoneValue && b.hv.channel === sz.channels[0]);
+expect(JSON.stringify(zsSeq) === "[32,32,0,1,0,0,32,0]" && zsTitles.join() === "Eingang 32,Eingang 32,Eingang 0,Eingang 1,Eingang 0,Eingang 0,Eingang 32,Eingang 0",
+	`Stub: mNextBank um 32 (am Ende ins Leere), mPrevBank, mShiftLeft/Right, mResetBank; Titel bei jeder Aktion (Echo) (${zsSeq} / ${zsTitles.join()})`);
+zsStep("mNextBank");
+expect(zsBinding.hv.key === "in32.mute" && ZS.accesses[0]._base === ZS.inputByKey("in32").base && ZS.targetOf(sz.channels[13]) === null,
+	"Stub: Bindung und DirectAccess folgen der Position, Plätze hinter dem Ende sind leer");
+const zsDeck = ZS.zones.find((z) => z.name === DECK_ZONE);
+for (let i = 0; i < 40; i++) zsDeck.mAction.mShiftRight.trigger(ZS.mapping);
+ZS.flush();
+expect(ZS.viewers.every((v) => v.channelKey === "ch6" && v.lastTitle === ["Tuner", "H-Delay Mono", "TONE3000"][v.slot]), "Stub: die Viewer des Deck-Kanals zeigen auf Platz 40 die Slotnamen von ch6");
+
 console.log = realLog;
 
 //==============================================================================
@@ -1322,9 +1668,8 @@ const realNow = Date.now;
 async function asyncProtocol3() {
 	heading("3h asynchron wie in Nuendo");
 	console.log = (...a) => consoleLines.push(a.join(" "));
-	const AS = readyHost({ ownSetsNotify: true }); // mit Echo: prüft, dass es erst aus dem Callback kommt
+	const AS = start(readyHost({ ownSetsNotify: true })); // mit Echo: prüft, dass es erst aus dem Callback kommt
 	AS.asyncMs = 0;
-	AS.activate();
 	sx(AS, 0x10); // wie das Deck nach dem Verbinden
 	await realSleep(20);
 	let from = AS.sent.length;
@@ -1443,7 +1788,7 @@ async function part2() {
 
 	console.log = (...a) => consoleLines.push(a.join(" "));
 	const HT = readyHost();
-	HT.activate();
+	start(HT);
 	HT.asyncMs = 10; // Nuendo meldet Änderungen nach dem SysEx-Handler
 	HT.onSend = (frame) => {
 		if (flow.active) deliverToTool(frame);

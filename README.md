@@ -51,12 +51,20 @@ und im Leerlauf regelmäßig wieder. Meldet eine Antwort danach eine Tuner-Mute 
 5.5). Unverlangt sendet das Script nur Änderungen, die Nuendo meldet, und
 das jederzeit, auch vor der ersten Abfrage. Nach einem gedrehten Regler kommt
 womöglich keine Rückmeldung. Den Klartext rechnet das Deck dann selbst aus. Regler und
-Presets wirken nur, wenn Platz 6 „Mono In 6" heißt (bit5) und TONE3000 in Slot 3 steckt
-(bit6). Die genauen Regeln stehen in `docs/protokoll.md` 4.4.
+Presets wirken nur, wenn der Deck-Kanal „Mono In 6" heißt (bit5) und TONE3000 in Slot 3
+steckt (bit6). Die genauen Regeln stehen in `docs/protokoll.md` 4.4.
+
+**Der Betrieb folgt „Mono In 6" über den Namen** (seit 2026-10-06, `docs/protokoll.md` 4.7):
+Eingangskanäle gehören zum Projekt; im aktuellen ist „Mono In 6" der einzige Eingang
+(Platz 0), früher lag er auf Platz 6. Alles hängt an einer eigenen Zone mit einem Platz,
+die das Script im Leerlauf dorthin schiebt, wo „Mono In 6" steht — auch nach Einfügen,
+Löschen oder Umbenennen von Eingängen. Fehlt der Kanal, bleibt bit5 = 0, und nichts wird
+dauernd verschoben. Der Suchlauf zeigt den Stand in der Zeile `Deck-Kanal: …`.
 
 Test ohne Nuendo und ohne MIDI-Ports: `node test/script.test.cjs` — prüft Protokoll 2
-bis 4 gegen eine nachgebaute API, lässt `tools/suchlauf.cjs` über ein Portpaar im
-Speicher laufen und spielt die Beispielsitzung aus `docs/protokoll.md` nach.
+bis 4 und die Deck-Suche gegen eine nachgebaute API (änderbare Eingangsliste,
+verschiebbare Zonen, Leerlauf mit simulierter Zeit), lässt `tools/suchlauf.cjs` über ein
+Portpaar im Speicher laufen und spielt die Beispielsitzung aus `docs/protokoll.md` nach.
 
 ## Eigenes Stimmgerät
 
@@ -67,6 +75,11 @@ Mono-Kanal (Vorgabe MADI 6 aus dem Windows-Paar „MADI (5+6)"). RME erlaubt das
 zu Nuendos ASIO; das Paar muss in den RME-Einstellungen unter „WDM Devices" freigegeben
 sein. Er läuft in einem eigenen Kindprozess (`bin/tuner-worker.js`) und nur im
 Tuner-Modus; ein Absturz dort berührt die MIDI-Verbindung nicht.
+
+Tuner-Taste: kurzer Druck schaltet den Tuner-Modus (beim Loslassen), langer Druck ab
+0,5 s die automatische Stummschaltung von Input 6 (Setting `muteChannel`, Vorgabe an).
+Roter statt goldener Rahmen heißt: Stummschaltung an. Beim Ausschalten des Modus wird
+Input 6 immer wieder offen geschaltet.
 
 Verfahren (`streamdeck-plugin/src/tuner`): YIN findet die Note (zwei Fenster, 26 Hz bis
 1,4 kHz, Oktavprüfung für Bass), danach verfolgt ein schmalbandiger Heterodyn-Empfänger

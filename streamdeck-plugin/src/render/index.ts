@@ -50,9 +50,10 @@ export function renderPresetKey(name: string, active: boolean, status: Status): 
 /**
  * Schalter-Taste 144x144 mit Jewel-Lampe: amp = „Tone3000", tuner, delay. Die Tuner-Taste
  * setzt ihre Meldungen („Tuner?", „stumm", „Kanal?", „Warte…") in klarer Schrift.
+ * redEdge: roter statt goldener Rahmen (Tuner-Taste: automatische Stummschaltung an).
  */
-export function renderToggleKey(kind: "amp" | "tuner" | "delay", on: boolean, status: Status): string {
-	return toggleKey(kind, on, status);
+export function renderToggleKey(kind: "amp" | "tuner" | "delay", on: boolean, status: Status, redEdge = false): string {
+	return toggleKey(kind, on, status, redEdge);
 }
 
 /**
@@ -64,7 +65,10 @@ export function renderTunerSegment(index: number, state: TunerState | null, stat
 	return tunerSegment(index, state, status);
 }
 
-/** Tuner-Taste 144x144 im Tuner-Modus: Note in klarer Schrift, Cent-Balken, Lampe. */
-export function renderTunerKey(state: TunerState | null, status: Status): string {
-	return tunerKey(state, status);
+/**
+ * Tuner-Taste 144x144 im Tuner-Modus: Note in klarer Schrift, Cent-Balken, Lampe.
+ * redEdge: roter statt goldener Rahmen (automatische Stummschaltung an).
+ */
+export function renderTunerKey(state: TunerState | null, status: Status, redEdge = false): string {
+	return tunerKey(state, status, redEdge);
 }

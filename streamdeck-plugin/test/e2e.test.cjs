@@ -37,7 +37,11 @@ const { Session } = require(path.join(build, "state", "session.js"));
 const status = (s) => (s.kind === "error" ? s.text : s.kind);
 const isQuery = (b) => b.length === 4 && b[0] === 0xf0 && b[2] === P.MSG_QUERY;
 
-/** Ein Host im Normalzustand wie in script.test.cjs: Titel, Slotnamen, Delay im Bypass, aktiviert. */
+/**
+ * Ein Host im Normalzustand wie in script.test.cjs: Titel, Slotnamen, Delay im Bypass,
+ * aktiviert, und Leerlauf, bis die Deck-Suche den Deck-Kanal auf "Mono In 6" geschoben hat
+ * (in Nuendo läuft mOnIdle ständig; was die Suche dabei meldet, geht vor dem Verbinden ins Leere).
+ */
 function readyHost(options = {}) {
 	const h = createHost(options);
 	h.load(SCRIPT);
@@ -47,6 +51,7 @@ function readyHost(options = {}) {
 	h.setSlotTitle(6, 2, "TONE3000");
 	h.setHostValue("ch6.slot1.bypass", 1);
 	h.activate();
+	h.settle();
 	return h;
 }
 
@@ -526,7 +531,12 @@ async function tunerOnDeck() {
 	for (const d of dials) knobAction.onWillAppear({ action: d, payload: { settings: {} } });
 	// Steinberg-Quelle (Protokoll 4); der eigene Tuner hat eigene Tests.
 	tunerAction.onWillAppear({ action: key, payload: { settings: { source: "steinberg" } } });
-	const press = (settings = {}) => tunerAction.onKeyDown({ action: key, payload: { settings: { source: "steinberg", ...settings } } });
+	const press = (settings = {}) => {
+		// Kurzer Druck: die Tuner-Taste wirkt beim Loslassen.
+		const ev = { action: key, payload: { settings: { source: "steinberg", ...settings } } };
+		tunerAction.onKeyDown(ev);
+		tunerAction.onKeyUp(ev);
+	};
 	/** Zustellen, die Drossel der Aktionen (höchstens alle 100 ms) auslaufen lassen. */
 	const settle = async () => {
 		v.pump();

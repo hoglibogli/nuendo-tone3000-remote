@@ -1,6 +1,8 @@
 # Protokoll Stream Deck ↔ Nuendo (TONE3000 Remote)
 
-Stand: **Protokoll 4**, 2026-10-02. Gegenstück ist das Nuendo-Script
+Stand: **Protokoll 4**, 2026-10-02; seit 2026-10-06 folgt der Betrieb dem Kanal
+„Mono In 6" über seinen Namen statt über Platz 6 ([4.7](#47-deck-kanal-folgt-dem-namen)),
+die Bytes sind dieselben. Gegenstück ist das Nuendo-Script
 `nuendo-script/Vincent_Tone3000.js` (`PROTOCOL_VERSION = 4`). Das Stream-Deck-Plugin
 wird gegen diese Datei gebaut; ändert sich das Script, ändert sich diese Datei mit.
 Die Beispielsitzung in [Abschnitt 8](#8-beispielsitzung) spielt `node test/script.test.cjs`
@@ -118,9 +120,12 @@ am Loopback nicht erprobt; das Deck schickt keine.
 
 ## 4 Betrieb (Protokoll 3)
 
-Gesteuert wird **Input 6**: Platz 6 der Eingangszone in Nuendo, der in der MixConsole
-„Mono In 6" heißt. Das Script bindet **fest an Platz 6** und prüft dessen Titel; das
-Ergebnis steht in bit5 von 0x22. Auf Platz 6 erwartet es:
+Gesteuert wird **Input 6**, der Eingangskanal, der in der MixConsole „Mono In 6" heißt —
+gleich, auf welchem Platz er steht. Eingangskanäle gehören zum Projekt; im Projekt vom
+2026-10-01 lag er auf Platz 6, in dem vom 2026-10-06 ist er der einzige Eingang (Platz 0).
+Alle Bindungen des Betriebs hängen am **Deck-Kanal**, einer eigenen Zone mit einem Platz,
+die das Script auf „Mono In 6" schiebt (4.7). Ob er dort steht, sagt bit5 von 0x22. Auf
+dem Deck-Kanal erwartet es:
 
 | Slot (Nuendo) | s / Note | Plugin | Was das Deck damit tut |
 | --- | --- | --- | --- |
@@ -157,7 +162,10 @@ es seit dem letzten Mal neu geladen oder verschoben wurde.
 **Vor der ersten Aktivierung der Script-Seite** (Nuendo startet noch) kann das Script
 nichts lesen. Es sendet dann einmal die Debugzeile `ABFRAGE vor der Aktivierung: Antwort
 folgt mit der Aktivierung`, merkt sich die Abfrage und beantwortet sie vollständig, sobald
-die Seite aktiv wird. Weitere Abfragen bis dahin ergeben keine weitere Zeile.
+der Deck-Kanal das erste Mal positioniert ist: gleich mit der Aktivierung, wenn er schon
+„Mono In 6" zeigt, sonst am Ende der ersten Deck-Suche (4.7, im Leerlauf, gewöhnlich
+150–300 ms später). Bis dahin gemerkt werden auch Abfragen, die nach der Aktivierung
+kommen (ohne Debugzeile); weitere Abfragen ergeben keine weitere Zeile.
 
 #### `F0 7D 11 <p> <v1> <v0> F7` — TONE3000-Regler setzen
 
@@ -242,10 +250,10 @@ zweite Note mit Velocity 0 schaltet wieder aus. Andere Velocities nicht senden.
 Ein Umschalter auf dem Deck sendet also `92 n 00`, wenn bit n gesetzt ist, sonst
 `92 n 7F`. Den Zustand kennt das Deck aus dem letzten 0x22.
 
-Die Tasten hängen als Value-Bindings an Nuendos Hostwerten (Mute des Kanals, `mEdit`
-und `mBypass` je Insert-Slot). Sie **wirken immer**, auch wenn bit5 = 0 — dann eben auf
-den Kanal, der gerade auf Platz 6 liegt. Das Deck sollte sie in diesem Fall sperren
-oder deutlich markieren.
+Die Tasten hängen als Value-Bindings an Nuendos Hostwerten des Deck-Kanals (Mute,
+`mEdit` und `mBypass` je Insert-Slot). Sie **wirken immer**, auch wenn bit5 = 0 — dann
+eben auf den Kanal, auf dem der Deck-Kanal gerade steht. Das Deck sollte sie in diesem
+Fall sperren oder deutlich markieren.
 
 Noten auf Kanal 1 (`90`) und Kanal 2 (`91`) gehören zu Protokoll 2 und sind kein Weg
 für den Betrieb: Kanal 1 Note n schaltet **wirklich** die Mute von Platz n.
@@ -280,7 +288,7 @@ Ein Datenbyte:
 | 2 | `0x04` | Delay (Slot 2) im Bypass |
 | 3 | `0x08` | Delay-Fenster (Slot 2) offen |
 | 4 | `0x10` | TONE3000-Fenster (Slot 3) offen |
-| 5 | `0x20` | **Zielkanal stimmt**: Platz 6 heißt „Mono In 6" |
+| 5 | `0x20` | **Zielkanal stimmt**: Der Deck-Kanal heißt „Mono In 6" (er folgt dem Namen, 4.7) |
 | 6 | `0x40` | **TONE3000 in Slot 3 gefunden** (Objekttitel enthält „tone3000", ohne Groß/klein) |
 | 7 | — | immer 0 |
 
@@ -327,7 +335,8 @@ speichert sie höchstens. Die Zeilen des Betriebs stehen in 4.5.
 | Ereignis in Nuendo | Frames |
 | --- | --- |
 | Mute, Fenster, Delay-Bypass geändert (vom Deck oder von Hand) | 0x22 |
-| Titel von Platz 6 geändert | 0x22 (bit5) |
+| Titel des Deck-Kanals geändert (umbenannt, Kanal davor eingefügt oder entfernt) | 0x22 (bit5) |
+| Deck-Suche hat den Deck-Kanal verschoben (4.7) | 0x23, 0x22, 0x20, 0x21, im Tuner-Modus 0x24 — soweit geändert |
 | Plugin-Name in Slot 1–3 geändert | 0x23; bei Slot 3 zusätzlich 0x22, 0x20, 0x21, soweit geändert |
 | TONE3000-Regler geändert (Echo eines 0x11, falls der Host es meldet, von Hand, durch Automation, durch ein Preset) | 0x20 |
 | irgendein TONE3000-Parameter gemeldet und der Presetname ist ein anderer | 0x21, dazu alle vier 0x20, soweit geändert |
@@ -383,8 +392,9 @@ gültig**: Das Deck übernimmt einfach den mitgeteilten Zustand.
   nicht vorab. Kommt kein 0x21, war es schon aktiv oder unbekannt (Debugzeile, 4.1).
 - **Umschalt-Taste:** Zielzustand aus dem letzten 0x22 ableiten (4.1), keine eigene
   Annahme über den Zustand.
-- **bit5 = 0:** Regler, Presets und Tasten sperren oder warnen — Platz 6 ist nicht
-  Input 6. **bit6 = 0:** Regler und Presets sperren, Reglerwerte und Preset als
+- **bit5 = 0:** Regler, Presets und Tasten sperren oder warnen — der Deck-Kanal ist
+  (noch) nicht Input 6: „Mono In 6" fehlt im Projekt, oder die Deck-Suche läuft gerade
+  (4.7). **bit6 = 0:** Regler und Presets sperren, Reglerwerte und Preset als
   unbekannt zeigen (4.2); Slot-3-Name aus 0x23 zeigt, was dort stattdessen steckt.
 
 ### 4.5 Debugzeilen des Betriebs
@@ -395,7 +405,7 @@ Zum Protokollieren; exakter Wortlaut, `<…>` sind Platzhalter.
 | --- | --- |
 | `ABFRAGE vor der Aktivierung: Antwort folgt mit der Aktivierung` | 0x10 vor der ersten Aktivierung |
 | `TONE3000 <Gain/Bass/Mid/Treble> abgelehnt: noch kein activeMapping (Seite nie aktiviert)` | 0x11 vor der Aktivierung |
-| `TONE3000 <…> abgelehnt: Platz 6 heißt "<Titel>", nicht "Mono In 6"` | 0x11 bei bit5 = 0 |
+| `TONE3000 <…> abgelehnt: Deck-Kanal heißt "<Titel>", nicht "Mono In 6"` | 0x11 bei bit5 = 0 |
 | `TONE3000 <…> abgelehnt: kein TONE3000 in Slot 3` | 0x11 bei bit6 = 0 |
 | `TONE3000 <…> abgelehnt: Titel "<titel>" nicht gefunden` | Parameter fehlt in TONE3000 |
 | `TONE3000 setzen abgelehnt: Frame mit <n> Byte, erwartet F0 7D 11 <p> <v1> <v0> F7` | 0x11 falsch lang |
@@ -405,7 +415,7 @@ Zum Protokollieren; exakter Wortlaut, `<…>` sind Platzhalter.
 | `Preset <Name> nicht übernommen, aktiv <x>` | Klartext nach dem Setzen ≠ Wunsch |
 | `Preset <Name> laut Host schon aktiv, ohne aktives Preset in TONE3000 wirkungslos` | Klartext schon vor dem Setzen = Wunsch (4.1, 4.6) |
 | `ABFRAGE <…> Fehler: …`, `TONE3000 setzen Fehler: …`, `Preset Fehler: …` | Ausnahme des Hosts, auch nach dem Wiederholen |
-| `<Ort> Fehler: …` | Ausnahme in einem Callback; höchstens 20 je Sitzung als Zeile |
+| `<Ort> Fehler: …` | Ausnahme in einem Callback, auch `Deck-Suche Fehler: …` (die Suche gibt dann auf, 4.7); höchstens 20 je Sitzung als Zeile |
 | `TUNER …`, `ABFRAGE Tuner Fehler: …` | Stimmanzeige, Liste in 5.6 |
 
 ### 4.6 Bekannte Eigenheiten und Grenzen
@@ -422,7 +432,7 @@ Zum Protokollieren; exakter Wortlaut, `<…>` sind Platzhalter.
   kommt nur diese Debugzeile.
 - **Rückmeldung eigener Werte:** Ob Nuendo nach einem 0x11 ein 0x20 liefert, ist am Gerät
   ungeprüft; eher nicht (4.1). Das Deck behandelt beides gleich (4.4).
-- Die Tasten auf Kanal 3 wirken **ohne Titelprüfung** auf Platz 6 (4.1).
+- Die Tasten auf Kanal 3 wirken **ohne Titelprüfung** auf den Deck-Kanal (4.1).
 - Wie schnell ein Wechsel in Slot 3 erkannt wird: Ein **anderes Plugin oder ein leerer
   Slot** ändert den Slot-Namen und wird sofort gemeldet. Kommt der Name, bevor Nuendo
   den DirectAccess-Baum umgebaut hat, liest das Script beim nächsten Bedarf noch einmal
@@ -438,6 +448,83 @@ Zum Protokollieren; exakter Wortlaut, `<…>` sind Platzhalter.
   Abfrage findet das richtige.
 - Eine Taste auf einen **leeren Slot** (Fenster eines nicht vorhandenen Plugins) ändert
   in Nuendo nichts; was das Deck dann als Zustand bekommt, ist nicht erprobt.
+
+### 4.7 Deck-Kanal folgt dem Namen
+
+Seit 2026-10-06. Davor band das Script fest an Platz 6 der Eingänge; im Projekt vom
+2026-10-06 ist „Mono In 6" aber der einzige Eingang, also Platz 0, und bit5 blieb 0
+(`suchlauf/2026-10-06_114528.txt`). Am Protokoll ändert sich kein Byte, nur woran bit5
+hängt und wann es kommt.
+
+**Zwei Zonen** über dieselbe Liste aller Eingangskanäle, beide ohne Sichtbarkeitsfilter
+(ausgeblendete Kanäle zählen mit), Platz k ist in beiden derselbe Kanal:
+
+| Zone | Plätze | wird verschoben | trägt |
+| --- | --- | --- | --- |
+| Such-Zone „Eingaenge" | 32 | nie | Titel aller Eingänge (daraus der Platz von „Mono In 6"), Kanal-1-Mute, Suchlauf |
+| Deck-Zone „Tone3000 Ziel" | 1 | von der Deck-Suche | den ganzen Betrieb: Mute, Slots 1–3, TONE3000, Tuner, Beobachtung |
+
+**Wann gesucht wird** — die Deck-Suche läuft in Nuendos Leerlauf, nur mit Anlass:
+
+- die Aktivierung der Script-Seite,
+- ein geänderter Titel in der Such-Zone (Eingang eingefügt, entfernt, umbenannt),
+- der Deck-Kanal verlässt „Mono In 6" (sein Titel wechselt von „Mono In 6" weg).
+
+Ohne Anlass kostet der Leerlauf nichts; mit Anlass läuft höchstens alle 150 ms ein
+Durchgang.
+
+**Wie:**
+
+1. Heißt der Deck-Kanal schon „Mono In 6": fertig, nichts bewegt.
+2. Steht „Mono In 6" auf Platz k der Such-Zone: die Deck-Zone an den Anfang
+   (`mResetBank`), dann k-mal einen Platz weiter (`mShiftRight`), alles in einem
+   Durchgang. Danach bis zu vier Durchgänge auf den Titel warten; kommt er nicht, die
+   nächste Runde, nach drei Runden aufgeben.
+3. Sonst, wenn alle 32 Plätze der Such-Zone belegt sind (das Projekt hat womöglich mehr
+   Eingänge): **Rückfall** — auf Platz 32 springen und je Durchgang einen Platz weiter, bis
+   der Titel stimmt oder sich nichts mehr bewegt (am Ende der Liste läuft der Schub ins
+   Leere; erkannt an der Objekt-ID, zwei Durchgänge ohne Bewegung), höchstens 256 Schritte.
+4. Sonst gibt es „Mono In 6" nicht: aufgeben, **ohne die Zone anzufassen**. bit5 bleibt 0.
+
+„Angekommen" heißt: Der Titel-Callback meldet „Mono In 6", oder — falls er noch aussteht
+— das Basisobjekt des Deck-Kanals heißt per DirectAccess so; dann übernimmt das Script
+diesen Namen. Nach dem Ende, gefunden oder aufgegeben, ruht die Suche bis zum nächsten
+Anlass. Ein neuer Anlass mitten in der Suche beginnt sie neu, höchstens achtmal.
+
+**Keine Dauer-Schieberei:** Die Zonen-Aktionen lösen selbst Titel- und Objektmeldungen
+aus, keine davon ist ein Anlass. Die Such-Zone bewegt sich nie, und der Deck-Kanal wird
+nur geschoben, solange er nicht „Mono In 6" heißt — die Suche führt ihn also nie vom Ziel
+weg. Fehlt „Mono In 6", gibt es in einem Projekt mit weniger als 32 Eingängen keine einzige
+Zonen-Aktion, mit 32 oder mehr einen Rückfall bis zum Ende (rund 35 Aktionen), danach Ruhe.
+
+**Was das Deck sieht:**
+
+- Verlässt der Deck-Kanal „Mono In 6" (etwa: Kanal davor eingefügt), kommt sofort ein 0x22
+  ohne bit5 (dazu, was der Kanal dort zeigt: 0x23, bit6 …). Nach der Suche, gewöhnlich
+  150–300 ms später, meldet das Script mit Dedup, was der Deck-Kanal jetzt zeigt: 0x23 für
+  die drei Slots, 0x22 mit bit5, 0x20 und 0x21, im Tuner-Modus 0x24. Das Deck fragt bei
+  einem Wechsel von bit5 ohnehin selbst ab (4.4). Mitten in der Suche sendet das Script
+  nichts über die Zwischenstände.
+- **Vor der ersten Positionierung** werden 0x10 und 0x13 gemerkt (4.1, 5.2) und mit dem
+  Ende der ersten Suche beantwortet — mit der Aktivierung, wenn der Deck-Kanal schon
+  richtig steht, und spätestens beim Sprung des Rückfalls, damit ein langer Rückfall das
+  Deck nicht aufhält (dann zunächst mit bit5 = 0).
+- 0x11 und 0x12 wirken nur bei bit5; die Tasten auf Kanal 3 und 0x13 wirken auf den Kanal,
+  auf dem der Deck-Kanal gerade steht (4.1, 5.2).
+- Im Tuner-Modus folgt der Tuner dem Deck-Kanal: Ein Tuner in Slot 1 des neuen Kanals wird
+  stumm geschaltet; einer, dem der Modus die Mute schon gab, nicht noch einmal (5.4).
+
+**Diagnose:** Der Suchlauf (Protokoll 2) nennt in einer Zeile `Deck-Kanal: "<Titel>"
+(bit5=<0|1>), Deck-Suche: <Ergebnis der letzten Suche>, <n> Zonen-Aktionen seit dem
+Laden`. Steht der Zähler nach der ersten Positionierung still, schiebt nichts mehr.
+
+**Grenzen:**
+
+- Verglichen wird der Titel exakt (Groß/klein zählt), es gilt der erste Platz mit diesem
+  Namen.
+- In Projekten mit mehr als 32 Eingängen sieht das Script Änderungen hinter Platz 31 nur
+  am Deck-Kanal selbst. Hat ein Rückfall dort aufgegeben (Ziel fehlte), sucht es erst nach
+  einer Änderung unter den ersten 32 Plätzen oder einer neuen Aktivierung wieder.
 
 ## 5 Stimmanzeige (Protokoll 4)
 
@@ -489,12 +576,15 @@ Genau 5 Byte; `m` = `01` an, `00` aus.
   Modus gilt dennoch: Taucht danach ein Tuner in Slot 1 auf, schaltet das Script ihn stumm
   und meldet ihn (5.4).
 - **Keine Titelprüfung:** 0x13 wirkt wie die Tasten auch bei bit5 = 0, auf den Tuner in
-  Slot 1 des Kanals, der gerade auf Platz 6 liegt. Ein `00` soll eine Mute immer aufheben
-  können.
+  Slot 1 des Kanals, auf dem der Deck-Kanal gerade steht. Ein `00` soll eine Mute immer
+  aufheben können.
 - **Vor der ersten Aktivierung** der Script-Seite (Nuendo startet noch) merkt sich das Script
   das zuletzt empfangene `m`, sendet einmal die Debugzeile `TUNER vor der Aktivierung: Modus
-  folgt mit der Aktivierung` und führt es mit der Aktivierung aus — noch vor einer ebenfalls
-  ausstehenden Abfrage, deren 0x24 also schon den neuen Stand zeigt.
+  folgt mit der Aktivierung` und führt es aus, sobald der Deck-Kanal das erste Mal
+  positioniert ist (4.7; bis dahin wird auch ein `m` nach der Aktivierung gemerkt, ohne
+  Zeile) — noch vor einer ebenfalls ausstehenden Abfrage, deren 0x24 also schon den neuen
+  Stand zeigt. So hebt ein `00` beim Start die Mute am Tuner von „Mono In 6" auf, nicht an
+  dem des Kanals, auf dem die Deck-Zone beim Laden steht.
 - Wirft der Host eine Ausnahme, löst das Script neu auf und versucht es **einmal** erneut;
   scheitert auch das, kommt `TUNER Fehler: …` statt des 0x24. Der Modus ist dann trotzdem
   umgeschaltet.
@@ -639,13 +729,13 @@ hebt das Deck sie mit der nächsten Abfrage einmal wieder auf.
 
 ## 6 Suchlauf (Protokoll 2)
 
-Unverändert seit Protokoll 2; benutzt von `tools/suchlauf.cjs`. Nicht für das Deck.
+Bytes unverändert seit Protokoll 2; benutzt von `tools/suchlauf.cjs`. Nicht für das Deck.
 
 | Bytes | Bedeutung |
 | --- | --- |
 | `F0 7D 01 F7` | Ping, Antwort `F0 7D 01 F7` |
 | `F0 7D 02 [Kanal hex] F7` | Suchlauf; ohne Text Ziel „Mono In 6", sonst der Kanalname |
-| `F0 7D 03 F7` | Beobachtung an (Ziel des letzten Suchlaufs, nur Platz 6) |
+| `F0 7D 03 F7` | Beobachtung an (Ziel des letzten Suchlaufs, nur wenn es der Deck-Kanal war) |
 | `F0 7D 04 F7` | Beobachtung aus, mit Zusammenfassung |
 | `F0 7D 05 <Text> F7` | Setzen, Text `<ziel>;<titel>;<modus>;<wert>` (siehe unten) |
 | `F0 7D 06 <Text> F7` | Befehl, Text `<schlüssel>;<zustand>` |
@@ -677,6 +767,21 @@ Die Beobachtung meldet `ÄNDERUNG <Objekt> tag=<n> "<titel>" = "<klartext>" roh 
 für Parameter der Objekte aus dem letzten Suchlauf, je Parameter und Runde höchstens 6
 Zeilen, je Sitzung höchstens 600.
 
+**Zielkanal seit 2026-10-06 (4.7):** Heißt der Deck-Kanal wie das Ziel, läuft der Suchlauf
+über dessen DirectAccess — dort hängt der Parameter-Callback, den die Beobachtung braucht.
+Sonst über den Platz der Such-Zone; dann lehnt 0x03 ab (`Beobachtung nur auf dem
+Deck-Kanal ("<Titel>") möglich, der Suchlauf traf Platz <k>`), ebenso, wenn die Deck-Zone
+seit dem Suchlauf weitergezogen ist (`Beobachtung nicht möglich: Der Deck-Kanal zeigt seit
+dem Suchlauf einen anderen Kanal …`). Neue Zeilen im Suchlauf:
+
+| Zeile | Bedeutung |
+| --- | --- |
+| `Deck-Kanal: "<Titel>" (bit5=<0\|1>), Deck-Suche: <Ergebnis>, <n> Zonen-Aktionen seit dem Laden` | Stand des Deck-Kanals |
+| `Ziel: Platz <k> "<Titel>" (per Name, Deck-Kanal)` | Ziel in der Such-Zone, gelesen über den Deck-Kanal |
+| `Ziel: Deck-Kanal "<Titel>" (per Name, nicht unter den 32 Plätzen)` | Ziel hinter der Such-Zone, nur über den Deck-Kanal erreichbar |
+| `Ziel: Platz <k> "<Titel>" (per Name)` | ein anderer Kanal der Such-Zone (keine Beobachtung) |
+| `Ziel: Deck-Kanal "<Titel>" (RÜCKFALL: "<gesucht>" nicht gefunden)` | nicht gefunden; der Lauf zeigt den Deck-Kanal (bisher Platz 6) |
+
 ## 7 Protokollfassung
 
 | Fassung | Inhalt |
@@ -693,7 +798,7 @@ noch Fassung 3: Die Stimmanzeige geht dann nicht, alles andere schon.
 
 ## 8 Beispielsitzung
 
-Ausgangslage: Platz 6 heißt „Mono In 6"; Slots „Tuner" (Steinberg), „H-Delay Mono",
+Ausgangslage: Der Deck-Kanal steht auf „Mono In 6" (die Deck-Suche ist durch, 4.7); Slots „Tuner" (Steinberg), „H-Delay Mono",
 „TONE3000"; TONE3000 auf Preset „Calfinornia", Gain 0.4992, Bass/Mid/Treble 5.00;
 Delay im Bypass; Mute aus, alle Fenster zu; der Tuner hört Stille (zuletzt „-49" Cent),
 seine Mute ist aus. Die Zeilen nach `Nuendo` sind alles, was das Script auf die Zeile davor

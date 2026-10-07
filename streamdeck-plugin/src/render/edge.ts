@@ -7,9 +7,11 @@
  * Bass und Mid nur oben und unten. Nebeneinander ergibt das den einen Rahmen.
  *
  * Tasten: dieselbe Kante innen um die Taste; „hell" für eingeschaltete Tasten,
- * „aktiv" als breiter, heller Rahmen für das gewählte Preset.
+ * „aktiv" als breiter, heller Rahmen für das gewählte Preset. „rot" und „hellrot"
+ * in derselben Form wie „schlicht" und „hell": Tuner-Taste mit eingeschalteter
+ * automatischer Stummschaltung.
  */
-import { GOLD_ACTIVE_STOPS, GOLD_BRIGHT_STOPS, GOLD_STOPS, verticalGradient } from "./style";
+import { GOLD_ACTIVE_STOPS, GOLD_BRIGHT_STOPS, GOLD_STOPS, RED_BRIGHT_STOPS, RED_STOPS, verticalGradient } from "./style";
 
 export const STRIP_WIDTH = 800;
 export const STRIP_HEIGHT = 100;
@@ -28,28 +30,36 @@ export function stripEdge(): string {
 	);
 }
 
-export type KeyEdge = "plain" | "bright" | "active";
+export type KeyEdge = "plain" | "bright" | "active" | "red" | "redBright";
 
 /** Wie weit der Rahmen innen reicht — Inhalte halten mindestens diesen Abstand. */
-export const KEY_EDGE_INSET: Record<KeyEdge, number> = { plain: 7, bright: 9, active: 15 };
+export const KEY_EDGE_INSET: Record<KeyEdge, number> = { plain: 7, bright: 9, active: 15, red: 7, redBright: 9 };
+
+/** Schlichter Rahmen: 5 px Verlauf, dunkle Innenlinie. */
+function plainEdge(id: string, stops: readonly [number, string][], size: number): string {
+	return (
+		`<defs>${verticalGradient(id, stops)}</defs>` +
+		`<rect x="2.5" y="2.5" width="${size - 5}" height="${size - 5}" rx="14" fill="none" stroke="url(#${id})" stroke-width="5"/>` +
+		`<rect x="5.5" y="5.5" width="${size - 11}" height="${size - 11}" rx="11.5" fill="none" stroke="#000" stroke-opacity=".5"/>`
+	);
+}
+
+/** Heller Rahmen: 6 px Verlauf, dunkle Innenlinie, schwacher Lichtsaum nach innen. */
+function brightEdge(id: string, stops: readonly [number, string][], glow: string, size: number): string {
+	return (
+		`<defs>${verticalGradient(id, stops)}</defs>` +
+		`<rect x="3" y="3" width="${size - 6}" height="${size - 6}" rx="14" fill="none" stroke="url(#${id})" stroke-width="6"/>` +
+		`<rect x="6.5" y="6.5" width="${size - 13}" height="${size - 13}" rx="11" fill="none" stroke="#000" stroke-opacity=".45"/>` +
+		`<rect x="8.5" y="8.5" width="${size - 17}" height="${size - 17}" rx="9.5" fill="none" stroke="${glow}" stroke-opacity=".28" stroke-width="2"/>`
+	);
+}
 
 /** Rahmen einer 144er-Taste samt eigener Verläufe. */
 export function keyEdge(style: KeyEdge, size = 144): string {
-	if (style === "plain") {
-		return (
-			`<defs>${verticalGradient("kgp", GOLD_STOPS)}</defs>` +
-			`<rect x="2.5" y="2.5" width="${size - 5}" height="${size - 5}" rx="14" fill="none" stroke="url(#kgp)" stroke-width="5"/>` +
-			`<rect x="5.5" y="5.5" width="${size - 11}" height="${size - 11}" rx="11.5" fill="none" stroke="#000" stroke-opacity=".5"/>`
-		);
-	}
-	if (style === "bright") {
-		return (
-			`<defs>${verticalGradient("kgb", GOLD_BRIGHT_STOPS)}</defs>` +
-			`<rect x="3" y="3" width="${size - 6}" height="${size - 6}" rx="14" fill="none" stroke="url(#kgb)" stroke-width="6"/>` +
-			`<rect x="6.5" y="6.5" width="${size - 13}" height="${size - 13}" rx="11" fill="none" stroke="#000" stroke-opacity=".45"/>` +
-			`<rect x="8.5" y="8.5" width="${size - 17}" height="${size - 17}" rx="9.5" fill="none" stroke="#fbeaa6" stroke-opacity=".28" stroke-width="2"/>`
-		);
-	}
+	if (style === "plain") return plainEdge("kgp", GOLD_STOPS, size);
+	if (style === "bright") return brightEdge("kgb", GOLD_BRIGHT_STOPS, "#fbeaa6", size);
+	if (style === "red") return plainEdge("krp", RED_STOPS, size);
+	if (style === "redBright") return brightEdge("krb", RED_BRIGHT_STOPS, "#ff8a78", size);
 	// Gewähltes Preset: 11 px breites, helles Gold, außen und innen dunkel abgesetzt,
 	// dazu ein schwacher Lichtsaum nach innen — auf einen Blick vom 5-px-Rahmen der
 	// übrigen Presets zu unterscheiden.

@@ -97,8 +97,9 @@ export function renderPresetKey(name: string, active: boolean, status: Status): 
 	return url;
 }
 
-export function renderToggleKey(kind: ToggleKind, on: boolean, status: Status): string {
-	const key = `t|${kind}|${on ? 1 : 0}|${statusKey(status)}`;
+/** redEdge: roter statt goldener Rahmen (Tuner-Taste, automatische Stummschaltung an). */
+export function renderToggleKey(kind: ToggleKind, on: boolean, status: Status, redEdge = false): string {
+	const key = `t|${kind}|${on ? 1 : 0}|${redEdge ? 1 : 0}|${statusKey(status)}`;
 	const hit = cache.get(key);
 	if (hit) return hit;
 
@@ -115,7 +116,7 @@ export function renderToggleKey(kind: ToggleKind, on: boolean, status: Status): 
 
 	const foreground =
 		jewelLamp(KEY_SIZE / 2, lampY, 25, kind as LampColor, lit) +
-		keyEdge(lit ? "bright" : "plain", KEY_SIZE) +
+		keyEdge(redEdge ? (lit ? "redBright" : "red") : lit ? "bright" : "plain", KEY_SIZE) +
 		textEl(labelX, labelBaseline, fitted.text, fitted.size, {
 			family: SCRIPT_FONT,
 			fill: CREAM,

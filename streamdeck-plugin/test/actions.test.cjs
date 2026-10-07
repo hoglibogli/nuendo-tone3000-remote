@@ -198,6 +198,11 @@ module.exports = async function run() {
 	section("Umschalt-Tasten");
 	const amp = new AmpAction(s);
 	const tuner = new TunerAction(s);
+	/** Kurzer Druck: Drücken und gleich wieder loslassen (die Tuner-Taste wirkt beim Loslassen). */
+	const tap = (act, ev) => {
+		act.onKeyDown(ev);
+		act.onKeyUp(ev);
+	};
 	const delay = new DelayAction(s);
 	const ka = fakeKey("amp");
 	const kt = fakeKey("tuner");
@@ -218,7 +223,7 @@ module.exports = async function run() {
 	feed([N.flags(0x1b)]); // bit5 und bit6 weg
 	j = sent.length;
 	amp.onKeyDown({ action: ka, payload: { settings: {} } });
-	tuner.onKeyDown({ action: kt, payload: { settings: SB } });
+	tap(tuner, { action: kt, payload: { settings: SB } });
 	check("bit5 = 0: gesperrt (Tuner: Einschalten), Warnzeichen, nichts gesendet", [ka.alerts, kt.alerts, sent.length - j], [1, 1, 0]);
 	await sleep(TUNER_KEY_INTERVAL_MS + 30);
 	check("Bild zeigt Kanal?", lastImage(kt), render.renderToggleKey("tuner", false, { kind: "error", text: "Kanal?" }));
@@ -234,7 +239,7 @@ module.exports = async function run() {
 	feed([N.flags(0x64)]);
 	await wait();
 	let n1 = sent.length;
-	tuner.onKeyDown({ action: kt, payload: { settings: SB } });
+	tap(tuner, { action: kt, payload: { settings: SB } });
 	check("Tuner-Taste ohne openWindow: nur 0x13 01, kein Kanal-Mute", sent.slice(n1).map(hex), ["F0 7D 13 01 F7"]);
 	flush();
 	await wait();
@@ -294,7 +299,7 @@ module.exports = async function run() {
 	check("bit3 = 0: Leiste mit Hinweis, Taste „Tuner?“", [strip.map((d, i) => lastCanvas(d) === render.renderTunerSegment(i, reading, OK)), lastImage(kt) === render.renderTunerKey(reading, OK), reading.found], [[true, true, true, true], true, false]);
 
 	n1 = sent.length;
-	tuner.onKeyDown({ action: kt, payload: { settings: { ...SB, openWindow: true } } });
+	tap(tuner, { action: kt, payload: { settings: { ...SB, openWindow: true } } });
 	check("mit openWindow aus: 0x13 00 und Note 1 Vel 0", sent.slice(n1).map(hex), ["F0 7D 13 00 F7", "92 01 00"]);
 	flush();
 	await sleep(DISPLAY_INTERVAL_MS + 20);
@@ -303,9 +308,9 @@ module.exports = async function run() {
 	await wait();
 	check("außerhalb des Modus ohne Tuner: Taste wie bisher, klein „Tuner?“", lastImage(kt), render.renderToggleKey("tuner", false, { kind: "error", text: "Tuner?" }));
 	n1 = sent.length;
-	tuner.onKeyDown({ action: kt, payload: { settings: { ...SB, openWindow: true } } });
+	tap(tuner, { action: kt, payload: { settings: { ...SB, openWindow: true } } });
 	check("mit openWindow an: 0x13 01 und Note 1 Vel 127", sent.slice(n1).map(hex), ["F0 7D 13 01 F7", "92 01 7F"]);
-	tuner.onKeyDown({ action: kt, payload: { settings: { ...SB, openWindow: "ja" } } });
+	tap(tuner, { action: kt, payload: { settings: { ...SB, openWindow: "ja" } } });
 	check("openWindow nur bei echtem true", sent.slice(n1 + 2).map(hex), ["F0 7D 13 00 F7"]);
 	// Modus aus, aber die Mute des Tuners steht an (etwa im Projekt gespeichert, 5.5)
 	n1 = sent.length;

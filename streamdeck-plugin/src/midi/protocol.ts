@@ -48,7 +48,7 @@ export const FLAG_TUNER_OPEN = 0x02;
 export const FLAG_DELAY_BYPASS = 0x04;
 export const FLAG_DELAY_OPEN = 0x08;
 export const FLAG_AMP_OPEN = 0x10;
-/** bit5: Platz 6 heißt „Mono In 6". */
+/** bit5: Der Deck-Kanal heißt „Mono In 6" (das Script folgt dem Namen, docs/protokoll.md 4.7). */
 export const FLAG_CHANNEL_OK = 0x20;
 /** bit6: TONE3000 steckt in Slot 3. */
 export const FLAG_PLUGIN_FOUND = 0x40;

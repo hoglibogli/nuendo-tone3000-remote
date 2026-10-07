@@ -78,7 +78,7 @@ import type { OwnTunerState } from "../tuner/wire";
  *              gespeichert, war Input 6 beim nächsten Öffnen stumm, und die alte Regel
  *              „nur eigene Mute aufheben" ließ ihn beim Ausschalten stumm). Der Merker
  *              channelMuted bleibt für den Neustart des Plugins. Gesendet wird nur mit Verbindung und
- *              bit5 (die Note wirkt ohne Titelprüfung auf Platz 6); sonst wird es mit dem
+ *              bit5 (die Note wirkt ohne Titelprüfung auf den Deck-Kanal); sonst wird es mit dem
  *              nächsten 0x22 nachgeholt. Der Merker überlebt einen Neustart des Plugins
  *              (globale Einstellungen, restoreChannelMute): Steht er nach dem Start und ist
  *              Input 6 noch stumm, hebt das erste 0x22 die Mute einmal auf.
@@ -675,7 +675,7 @@ export class Store {
 	 *        Verbindungsaufbau als 0x13 0 hinaus.
 	 *
 	 * openWindow (Setting der Taste): dazu Note 1 = Tuner-Fenster auf bzw. zu — nur mit
-	 * bit5, denn die Note wirkt ohne Titelprüfung auf Platz 6 (4.1).
+	 * bit5, denn die Note wirkt ohne Titelprüfung auf den Deck-Kanal (4.1).
 	 */
 	pressTuner(openWindow: boolean): number[][] | null {
 		if (this.tunerSource === "own") {

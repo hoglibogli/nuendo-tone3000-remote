@@ -9,7 +9,7 @@
 			"Name": "Regler",
 			"UUID": "com.sorg.tone3000.knob",
 			"Icon": "imgs/actions/knob/icon",
-			"Tooltip": "Gain, Bass, Mid oder Treble von TONE3000. Ohne Auswahl bestimmt die Spalte des Reglers den Parameter.",
+			"Tooltip": "Gain, Bass, Mid oder Treble von TONE3000. Ohne Auswahl zählt die Position: der linke Tone3000-Regler ist Gain, dann Bass, Mid, Treble.",
 			"Controllers": [
 				"Encoder"
 			],
@@ -64,7 +64,7 @@
 			"Name": "Tuner",
 			"UUID": "com.sorg.tone3000.tuner",
 			"Icon": "imgs/actions/tuner/icon",
-			"Tooltip": "Tuner-Modus an/aus: Die Touch-Leiste zeigt die Stimmanzeige des Steinberg-Tuners in Slot 1, sein Ausgang ist stumm, die Regler ruhen. Optional öffnet sich das Tuner-Fenster am Rechner.",
+			"Tooltip": "Kurz: Tuner-Modus an/aus — die Touch-Leiste zeigt die Stimmanzeige (eigener Tuner auf MADI 6), die Regler ruhen. Lang: automatische Stummschaltung von Input 6 an/aus; roter Rahmen = an.",
 			"Controllers": [
 				"Keypad"
 			],
