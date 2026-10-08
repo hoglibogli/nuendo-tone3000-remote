@@ -119,7 +119,9 @@ module.exports = function run() {
 		describe(`${name} ${cents > 0 ? "+" : ""}${cents} Cent`, e);
 		ok(`${name}: keine Oktav- oder andere Fehlnote`, e.wrong === 0 && e.polls > 100, `falsch ${e.wrong}, Abfragen ${e.polls}`);
 		ok(`${name}: erste Anzeige nach höchstens 300 ms`, e.first <= 0.3, `ist ${f2(e.first)} s`);
-		ok(`${name}: Fehler höchstens 1 Cent`, e.maxErr <= 1, `ist ${f2(e.maxErr)}`);
+		// Seit dem schnellen Ansprechen (2026-10-08) darf der erste Wert nach einem Anschlag gröber
+		// sein (Einstieg 1,2 Cent); stark verstimmt (E1 +30) liegt er kurz bis 1,07 daneben.
+		ok(`${name}: erster Wert höchstens 1,5 Cent daneben, ab 0,3 s höchstens 1 Cent`, e.maxErr <= 1.5 && e.maxErrSettled <= 1, `ist ${f2(e.maxErr)} / ${f2(e.maxErrSettled)}`);
 	}
 
 	section("Tuner: hohe Lagen (bis 1,4 kHz)");
@@ -165,6 +167,40 @@ module.exports = function run() {
 		ok("A2 bleibt (auch über den Wiederanschlag bei 5 s) ohne Lücke", between.every((e) => e.r.state === "tracking" && e.r.noteName === "A"));
 		const err = Math.max(...tl.filter((e) => e.t > 5.4 && e.t < 7).map((e) => Math.abs(e.r.cents - 5)));
 		ok("A2 nach dem Wiederanschlag auf 0,5 Cent genau", err < 0.5, `max ${f2(err)}`);
+	}
+	{
+		// Schnell im Wechsel wie beim Stimmen (schnell-gitarre.wav, 2026-10-08): A2 und D3 alle
+		// 0,5 s, jede Saite nach 0,4 s abgedämpft. Die neue Note steht sofort gedimmt (Vorschau),
+		// der gemessene Wert kurz danach, nie „--“ dazwischen.
+		const rate = 48000;
+		const strikes = [];
+		for (let k = 0; k < 8; k++) strikes.push({ t: 1 + 0.5 * k, midi: k % 2 ? 50 : 45, cents: k % 2 ? 4 : -3 });
+		const x = new Float64Array(Math.round(5.5 * rate));
+		for (const s of strikes) {
+			const p = S.pluck({ sampleRate: rate, midi: s.midi, cents: s.cents, durationSec: 5.5, t60: 7, fundamentalDb: -5, B: 3e-5, startSec: s.t, peakDb: -20, noiseDb: null, seed: 7 + s.midi });
+			for (let i = Math.round(s.t * rate); i < x.length; i++) {
+				const t = i / rate - s.t;
+				x[i] += p.clean[i] * (t < 0.4 ? 1 : Math.pow(10, (-60 * Math.min(1, (t - 0.4) / 0.05)) / 20));
+			}
+		}
+		S.addNoise(x, Math.pow(10, -94 / 20), 9);
+		const tl = S.runTuner(new TunerEngine(rate), Float32Array.from(x), rate, { everySeconds: 0.01 });
+		const name = (m) => (m === 45 ? "A" : "D");
+		const seen = [];
+		const bright = [];
+		let gaps = 0;
+		strikes.forEach((s, k) => {
+			const win = tl.filter((e) => e.t > s.t && e.t < s.t + 0.5);
+			const v = win.find((e) => e.r.state !== "silent" && e.r.noteName === name(s.midi));
+			const b = win.find((e) => e.r.state === "tracking" && e.r.noteName === name(s.midi));
+			seen.push(v ? Math.round((v.t - s.t) * 1000) : Infinity);
+			bright.push(b ? Math.round((b.t - s.t) * 1000) : Infinity);
+			// Vor dem ersten Anschlag war nichts zu zeigen; gezählt werden die Wechsel.
+			if (k > 0) gaps += win.filter((e) => (!v || e.t < v.t) && e.r.state === "silent").length;
+		});
+		ok("A2/D3 im Halbsekundentakt: neue Note steht nach höchstens 70 ms (gedimmt)", seen.every((m) => m <= 70), `ms: ${seen.join(", ")}`);
+		ok("… der gemessene Wert nach höchstens 150 ms", bright.every((m) => m <= 150), `ms: ${bright.join(", ")}`);
+		ok("… beim Wechsel nie „--“: die alte Note bleibt gedimmt, bis die neue steht", gaps === 0, `${gaps} Abfragen „--“`);
 	}
 	{
 		const st = string("E4");

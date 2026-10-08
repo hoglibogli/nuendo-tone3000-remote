@@ -21,8 +21,10 @@
  *              Oberton gesehen hat (Bass-DI mit starkem 2. Teilton).
  *      Unter ~120 Hz könnte jeder Ton der 2. Teilton eines Basstons sein; solche Noten
  *      werden erst übernommen, wenn das tiefe Fenster ganz nach dem Anschlag liegt.
- *      Eine Note gilt, wenn drei Schritte hintereinander dieselbe liefern (Median,
- *      alle innerhalb ±35 Cent). Während einer Verfolgung schaltet eine andere Note
+ *      Eine Note gilt, wenn zwei Schritte hintereinander dieselbe liefern (Median,
+ *      alle innerhalb ±35 Cent); unter ~120 Hz muss dazu das tiefe Fenster zur Hälfte
+ *      nach dem Anschlag liegen. Kurz nach einem Anschlag zeigt die Anzeige die neue Note
+ *      sofort gedimmt mit dem Wert von Stufe 1 (Vorschau), bis Stufe 2 misst. Während einer Verfolgung schaltet eine andere Note
  *      sofort um, wenn seit der Übernahme ein neuer Anschlag kam; ohne Anschlag erst
  *      nach zehn Schritten, nie auf einen Oberton und nie auf die Nachbarnote, solange
  *      Stufe 2 gültig misst (die Notengrenze regelt Stufe 2) — nur kurz nach der
@@ -30,16 +32,19 @@
  *   3. Stufe 2 „Note verfolgen" (heterodyne.ts): Bänder bei f, 2f, 3f (Sollfrequenz der
  *      Note), je ein schmaler Tiefpass (h · bandFactor · Abstand von 50 Cent: E2 3 Hz,
  *      E4 12 Hz, B0 1,1 Hz) und ein breiter (20 Hz) für das schnelle Einschwingen,
- *      davor ein Kamm über eine Periode der Note gegen die Nachbarteiltöne. Dazu zwei
- *      Nachbarbänder bei f·√2 und f·√6 (zwischen den Teiltönen) für die
- *      Rauschschätzung. Die Bänder laufen über den Verlauf ab einer Vorlaufzeit vor dem
- *      Anschlag nach, damit sie nicht erst einschwingen müssen.
+ *      davor ein Kamm über eine Periode der Note gegen die Nachbarteiltöne. Dazu vier
+ *      Nachbarbänder bei f·√2, f·√3, f·√6 und f·√12 (zwischen den Teiltönen) für die
+ *      Rauschschätzung; das ruhigste zählt (beim Bass klingen andere Saiten mit). Die
+ *      Bänder laufen über den Verlauf ab einer Vorlaufzeit vor dem Anschlag nach, damit
+ *      sie nicht erst einschwingen müssen.
  *      Phasenregression über 0,05 … 0,3 s (das kürzeste Fenster, das die Ziel-
  *      genauigkeit erreicht, solange längere nicht abweichen). Die Teiltöne werden in
  *      Cent auf den Grundton umgerechnet, um die gemessene Spreizung (Inharmonizität)
  *      bereinigt und nach ihrer Unsicherheit gewichtet; wer über Sekunden stärker
  *      streut, als seine Unsicherheit erklärt, zählt weniger.
- *      Angezeigt wird ab drei Schritten mit Unsicherheit ≤ 0,6 Cent; verfolgt, solange
+ *      Angezeigt wird nach einem Anschlag ab zwei Schritten mit Unsicherheit ≤ 1,2 Cent
+ *      (0,3 s lang gilt diese Grenze weiter), ohne Anschlag — Fingergeräusche — erst ab
+ *      drei Schritten mit ≤ 0,6 Cent; verfolgt, solange
  *      sie ≤ maxErrorCents und der Abstand zum Rauschen im Band ≥ minSnrDb ist —
  *      pegelunabhängig, nur relativ zum gemessenen Rauschen. Wandert die Saite über
  *      ±55 Cent, wechselt die Note.
@@ -98,7 +103,7 @@ export interface TunerOptions {
 	holdSeconds?: number;
 	/** YIN-Schwelle für d' (0,12). */
 	yinThreshold?: number;
-	/** Schritte mit derselben Note bis zur Übernahme (3). */
+	/** Schritte mit derselben Note bis zur Übernahme (2). */
 	lockFrames?: number;
 	/** Schritte bis zum Wechsel ohne neuen Anschlag (10). */
 	switchFrames?: number;
@@ -119,6 +124,33 @@ export interface TunerOptions {
 	smoothingSeconds?: number;
 	/** Spreizung der Teiltöne messen und herausrechnen (an). */
 	inharmonicityCorrection?: boolean;
+	/**
+	 * Nach einem Anschlag: erste Anzeige einer Note ab dieser Unsicherheit in Cent (1,2;
+	 * 1,5 wäre beim Bass 10–40 ms schneller, der erste Wert aber bis 1,24 Cent daneben).
+	 * Ohne Anschlag gilt immer 0,6 · maxErrorCents über drei Schritte.
+	 */
+	entryErrorCents?: number;
+	/** … so viele Schritte hintereinander (2). */
+	entryFrames?: number;
+	/** So lange nach der ersten Anzeige gilt noch die Einstiegsgrenze statt maxErrorCents (0,3 s). */
+	entryGraceSeconds?: number;
+	/**
+	 * Vorschau: Übernimmt Stufe 1 binnen dieser Zeit nach einem Anschlag eine neue Note,
+	 * zeigt die Anzeige sie sofort gedimmt mit dem Wert von Stufe 1, bis Stufe 2 misst
+	 * (0,3 s; 0 = aus, dann „--" bis dahin und überall die strengen Regeln).
+	 */
+	previewSeconds?: number;
+	/**
+	 * Anteil des tiefen Fensters, der nach dem Anschlag liegen muss, bevor eine Note unter
+	 * ~120 Hz gilt (0,5). Ein verbleibender Oktavfehler korrigiert Stufe 1 kurz danach selbst.
+	 */
+	lowFreshShare?: number;
+	/**
+	 * Nachbarbänder für die Rauschschätzung (4: f·√2, f·√6, f·√3, f·√12; 2 = nur die ersten
+	 * beiden wie bis 2026-10-08). Beim Bass klingen andere Saiten in einzelnen Nachbarbändern
+	 * mit; mit vier zählt das ruhigste (schnell-bass.wav: 37 → 24 Anschläge ohne Wert).
+	 */
+	noiseBands?: number;
 }
 
 const DEFAULTS: Required<TunerOptions> = {
@@ -128,7 +160,7 @@ const DEFAULTS: Required<TunerOptions> = {
 	maxFrequency: 1400,
 	holdSeconds: 3,
 	yinThreshold: 0.12,
-	lockFrames: 3,
+	lockFrames: 2,
 	switchFrames: 10,
 	bandFactor: 1.25,
 	harmonics: 3,
@@ -139,6 +171,14 @@ const DEFAULTS: Required<TunerOptions> = {
 	maxWindowSeconds: 0.3,
 	smoothingSeconds: 0.03,
 	inharmonicityCorrection: true,
+	// Schnelles Ansprechen nach einem Anschlag (Aufnahme schnell-gitarre.wav 2026-10-08,
+	// Saiten im Halbsekundentakt): Note nach 50 statt 120 ms, Wert nach 100 statt 130 ms.
+	entryErrorCents: 1.2,
+	entryFrames: 2,
+	entryGraceSeconds: 0.3,
+	previewSeconds: 0.3,
+	lowFreshShare: 0.5,
+	noiseBands: 4,
 };
 
 /** Grenze zwischen den beiden Fenstern der Stufe 1 (untere Grenze von „hoch"). */
@@ -172,6 +212,8 @@ const NOISE_WINDOW_SECONDS = 1.5;
 const NOISE_SETTLE_CUTOFF_PERIODS = 0.6;
 /** Weichen die beiden Nachbarbänder um mehr als diesen Faktor ab, zählt das leisere. */
 const NOISE_DISAGREE = 4;
+/** Lage der Nachbarbänder in Vielfachen von f, zwischen den Teiltönen. */
+const NOISE_BAND_RATIOS = [Math.SQRT2, Math.sqrt(6), Math.sqrt(3), Math.sqrt(12)];
 /** Grundrauschen: Minimum der Schritt-Energien über diese Zeit. */
 const FLOOR_SECONDS = 5;
 /**
@@ -194,7 +236,8 @@ const LOST_FRAMES = 5;
  */
 const ENTRY_ERROR_SHARE = 0.6;
 /** … und so viele Schritte hintereinander (kürzere Fetzen werden nie angezeigt). */
-const ENTRY_FRAMES = 3;
+/** … so viele Schritte hintereinander, ohne vorausgehenden Anschlag (Fingergeräusche). */
+const STRICT_ENTRY_FRAMES = 3;
 /**
  * Abgedämpft: Fällt die Leistung der Teiltöne binnen 150 ms um mehr als 12 dB (80 dB/s;
  * eine frei ausklingende Saite verliert 10 … 30 dB/s), hat eine Hand die Saite
@@ -224,6 +267,8 @@ const REACQUIRE_ERROR_SHARE = 0.7;
  */
 const SMOOTHING_MAX_FACTOR = 8;
 const SMOOTHING_REFERENCE_CENTS = 0.3;
+/** Ein Wert mit höchstens diesem Anteil der Unsicherheit der Anzeige ersetzt sie direkt. */
+const DISPLAY_JUMP_SHARE = 0.5;
 /** Ab hier (|Cent|, mehrere Schritte) wechselt Stufe 2 zur Nachbarnote, ab RETARGET_NOW_CENTS sofort. */
 const RETARGET_CENTS = 55;
 const RETARGET_FRAMES = 5;
@@ -377,6 +422,17 @@ export class TunerEngine {
 	private damped = false;
 	private lostBy: "damped" | "uncertain" | "" = "";
 	private entryStreak = 0;
+	private firstShowHop = 0;
+	/** Die Anzeige zeigt die Vorschau von Stufe 1 (previewSeconds), noch keinen Wert von Stufe 2. */
+	private preview = false;
+	/** Unsicherheit des Werts, auf dem die Anzeige beruht (Cent). */
+	private displaySe = Infinity;
+	/**
+	 * Der laufende Versuch folgt auf einen Anschlag (binnen previewSeconds): Dann gelten die
+	 * schnellen Regeln (Vorschau, entryErrorCents, entryFrames, entryGraceSeconds). Ohne
+	 * Anschlag — Fingergeräusch, Mitschwingen — die strengen von früher.
+	 */
+	private struck = false;
 	private readonly powerHist = new Float64Array(DAMP_HOPS + 1);
 	private readonly displayHist = new Float64Array(DAMP_HOPS + DAMP_HOLD_BACK + 1);
 	private scatterW: number[] = [];
@@ -401,6 +457,7 @@ export class TunerEngine {
 		options: TunerOptions = {},
 	) {
 		this.o = { ...DEFAULTS, ...options };
+		if (!(this.o.entryErrorCents > 0)) this.o.entryErrorCents = ENTRY_ERROR_SHARE * this.o.maxErrorCents;
 		this.front = new FrontEnd(sampleRate);
 		const fsd = this.front.analysisRate;
 		this.yinHigh = new Yin({
@@ -643,7 +700,7 @@ export class TunerEngine {
 	private lowWindowFresh(note: number): boolean {
 		if (this.yinLow === null) return true;
 		if (frequencyOf(note, this.o.a4) > 2.06 * SPLIT_HZ) return true;
-		return this.index - this.lastOnsetIndex >= this.lowSpan;
+		return this.index - this.lastOnsetIndex >= this.o.lowFreshShare * this.lowSpan;
 	}
 
 	private trackStep(hopIndex: number, est: Estimate | null): void {
@@ -656,9 +713,23 @@ export class TunerEngine {
 		// Vor der ersten Anzeige schon lernen: Solange die Spreizung unbekannt ist, zählen
 		// die Obertöne wenig, und ohne sie wird die Unsicherheit beim Bass nicht klein genug.
 		if (!this.stage2Ever && est && !est.pending) this.learnPartials(est);
-		const entry = this.stage2Ever || (est !== null && est.se <= ENTRY_ERROR_SHARE * this.o.maxErrorCents);
-		if (est && est.valid && entry) {
-			if (!this.stage2Ever && ++this.entryStreak < ENTRY_FRAMES) return;
+		// Vor der ersten Anzeige gilt die Einstiegsgrenze, kurz danach (entryGraceSeconds)
+		// die gröbere von Einstieg und Verfolgung, danach maxErrorCents (est.valid).
+		// Ohne vorausgehenden Anschlag (struck) gelten die strengen Regeln: 0,6 · maxErrorCents,
+		// drei Schritte, keine Nachfrist — Griffgeräusche zeigen sonst eine Phantomnote
+		// (saiten-1.wav bei 20,04 s).
+		const entryError = this.struck ? this.o.entryErrorCents : ENTRY_ERROR_SHARE * this.o.maxErrorCents;
+		const entryFrames = this.struck ? this.o.entryFrames : STRICT_ENTRY_FRAMES;
+		const grace = this.struck ? this.o.entryGraceSeconds : 0;
+		let usable = false;
+		if (est !== null) {
+			const inBand = Math.abs(est.cents) <= BAND_LIMIT_CENTS;
+			if (!this.stage2Ever) usable = inBand && est.se <= entryError;
+			else if ((hopIndex - this.firstShowHop) * this.hopSeconds <= grace) usable = inBand && est.se <= Math.max(entryError, this.o.maxErrorCents);
+			else usable = est.valid;
+		}
+		if (est && usable) {
+			if (!this.stage2Ever && ++this.entryStreak < entryFrames) return;
 			if (Math.abs(est.cents) > RETARGET_CENTS) {
 				const now = Math.abs(est.cents) > RETARGET_NOW_CENTS || !this.stage2Ever;
 				if (now || ++this.retargetStreak >= RETARGET_FRAMES) {
@@ -669,11 +740,12 @@ export class TunerEngine {
 				this.retargetStreak = 0;
 			}
 			const first = !this.stage2Ever;
+			if (first) this.firstShowHop = hopIndex;
 			this.stage2Ever = true;
 			this.invalidStreak = 0;
 			this.validStreak++;
-			this.show(est);
-			if (!first) this.learnPartials(est);
+			this.show(est, first);
+			if (!first && est.valid) this.learnPartials(est);
 			return;
 		}
 		this.validStreak = 0;
@@ -712,12 +784,22 @@ export class TunerEngine {
 		}
 	}
 
-	private show(est: Estimate): void {
+	/**
+	 * Anzeige nachführen. fresh: erster Wert eines Versuchs (neuer Anschlag) — direkt, nicht
+	 * vom alten Wert oder der Vorschau aus geglättet; nach dem Drehen am Wirbel soll die
+	 * Nadel sofort dort stehen. Danach springt sie, sobald ein Wert höchstens halb so
+	 * unsicher ist wie der, auf dem sie beruht (der erste Wert nach einem Anschlag ist grob);
+	 * sonst glättet sie.
+	 */
+	private show(est: Estimate, fresh = false): void {
 		const cents = est.cents;
-		if (!this.displaySet) {
+		if (!this.displaySet || this.preview || fresh || est.se <= DISPLAY_JUMP_SHARE * this.displaySe) {
 			this.display = cents;
+			this.displaySe = est.se;
 			this.displaySet = true;
+			this.preview = false;
 		} else {
+			this.displaySe = Math.min(this.displaySe, est.se);
 			// In Bewegung (Wirbel wird gedreht) folgt die Nadel ohne Verlängerung.
 			const ratio = est.moving ? 1 : est.se / SMOOTHING_REFERENCE_CENTS;
 			const tau = this.smoothing * Math.min(SMOOTHING_MAX_FACTOR, Math.max(1, ratio * ratio));
@@ -809,7 +891,16 @@ export class TunerEngine {
 		this.validStreak = 0;
 		this.retargetStreak = 0;
 		this.displaySet = keep;
+		this.preview = false;
+		this.struck = this.o.previewSeconds > 0 && this.index - this.lastOnsetIndex <= this.o.previewSeconds * this.sampleRate;
 		if (!keep) this.source = "none";
+		// Vorschau: neue Note kurz nach einem Anschlag sofort zeigen (gedimmt, Wert von Stufe 1).
+		if (!keep && this.struck) {
+			this.display = Math.max(-50, Math.min(50, (s.median - s.note) * 100));
+			this.displaySet = true;
+			this.preview = true;
+			this.clarity = 0;
+		}
 	}
 
 	/**
@@ -820,6 +911,7 @@ export class TunerEngine {
 	private restartAttempt(hopIndex: number): void {
 		this.startBands(this.note, true);
 		this.lockHop = hopIndex;
+		this.struck = this.o.previewSeconds > 0;
 		this.entryStreak = 0;
 		this.invalidStreak = 0;
 		this.validStreak = 0;
@@ -879,8 +971,10 @@ export class TunerEngine {
 		}
 		this.powerHist.fill(0);
 		this.displayHist.fill(NaN);
-		specs.push({ frequency: f * Math.SQRT2, cutoff: cut, order: 4, noise: true });
-		specs.push({ frequency: f * Math.sqrt(6), cutoff: cut, order: 4, noise: true });
+		for (const r of NOISE_BAND_RATIOS.slice(0, Math.max(2, this.o.noiseBands))) {
+			if (r * (f + cut) > 0.45 * fs) continue;
+			specs.push({ frequency: f * r, cutoff: cut, order: 4, noise: true });
+		}
 
 		const histLen = this.history.length;
 		const preRollSec = Math.min(PRE_ROLL_MAX, Math.max(PRE_ROLL_MIN, PRE_ROLL_CUTOFF_PERIODS / cut));
@@ -920,6 +1014,7 @@ export class TunerEngine {
 	/** Rauschleistungsdichte (je Hz zweiseitig) aus den Nachbarbändern; 0, solange keine Schätzung vorliegt. */
 	private noiseDensity(): number {
 		const b = this.bank!.bands;
+		if (b.length - this.harmonics > 2) return this.noiseDensityMin(b);
 		const lo = b[this.harmonics];
 		const hi = b[this.harmonics + 1];
 		const a = lo.noisePower();
@@ -934,6 +1029,23 @@ export class TunerEngine {
 		else if (c === c) n = c;
 		else return 0;
 		return n / bw;
+	}
+
+	/**
+	 * Mehr als zwei Nachbarbänder: Klingt eine andere Saite in einem Nachbarband mit (Bass, im
+	 * Wechsel gespielt), zählt das kleinste; dazu die, die höchstens NOISE_DISAGREE-mal so
+	 * groß sind, gemittelt. Für zwei Bänder dieselbe Regel wie oben.
+	 */
+	private noiseDensityMin(b: BandBank["bands"]): number {
+		const powers: number[] = [];
+		for (let i = this.harmonics; i < b.length; i++) {
+			const p = b[i].noisePower();
+			if (p === p) powers.push(p);
+		}
+		if (powers.length === 0) return 0;
+		const small = Math.min(...powers);
+		const near = powers.filter((p) => p <= NOISE_DISAGREE * small);
+		return near.reduce((a, p) => a + p, 0) / near.length / b[this.harmonics].narrow.noiseBandwidth;
 	}
 
 	/**

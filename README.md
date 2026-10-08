@@ -99,8 +99,19 @@ Gemessen an `aufnahmen/saiten-1.wav` (Gitarre über MADI 6, Anschläge -21…-30
 Rauschen -106 dBFS): hohe E 7,5–24,8 s verfolgt, ein Tuner mit fester Schwelle bei
 -55 dBFS hält sie 0,5–2 s; Anzeige nach 0,1–0,13 s; Rechenlast etwa 1 % eines Kerns.
 
-Werkzeuge: `node tools/audio-probe.cjs` (Eingänge, Pegel, Aufnahme als WAV) und
-`node tools/tuner-eval.cjs datei.wav` (Zeitleiste und Tabelle je Anschlag).
+Ansprechen (2026-10-08, gemessen an `aufnahmen/schnell-gitarre.wav`, Saiten im
+Halbsekundentakt): Nach einem Anschlag steht die neue Note nach etwa 50 ms gedimmt
+(Vorschau aus Stufe 1), der gemessene Wert nach etwa 100 ms (90 % binnen 120 ms); beim
+Saitenwechsel bleibt die alte Note gedimmt stehen, kein „--“ dazwischen. Ohne Anschlag
+(Griffgeräusche) gelten weiter die strengen Regeln, damit keine Phantomnote erscheint.
+Beim 5-Saiter (`aufnahmen/schnell-bass.wav`) gilt das für D und G genauso; B, E und A
+sinken nach einem kräftigen Anschlag in 0,4 s um 15–25 Cent ab, der genaue Wert steht dort
+erst, wenn die Tonhöhe ruhig ist (die Note gedimmt schon nach etwa 90 ms). Weicher
+anschlagen und knapp eine Sekunde klingen lassen hilft.
+
+Werkzeuge: `node tools/audio-probe.cjs` (Eingänge, Pegel, Aufnahme als WAV),
+`node tools/tuner-eval.cjs datei.wav` (Zeitleiste und Tabelle je Anschlag) und
+`node tools/ansprech-eval.cjs datei.wav` (Ansprechzeit je Anschlag, Lücken, Fehlnoten).
 
 **Falle:** Stream Deck startet Plugins mit seinem eigenen Node 20. Die im npm-Paket
 audify mitgelieferte Binärdatei stürzte darunter ab (0xC0000005), unter Node 24 lief sie.
