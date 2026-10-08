@@ -200,6 +200,32 @@ module.exports = function run() {
 		const shown = after.length ? after[0].r.cents : NaN;
 		ok("gehalten wird der Wert von vor dem Abdämpfen (+3 ± 1 Cent)", Math.abs(shown - 3) <= 1, `ist ${f2(shown)}`);
 	}
+	{
+		// 5-Saiter (Aufnahmen 2026-10-07): B0 abgedämpft, ein Griffgeräusch regt die Saite
+		// leise und unruhig an (löst Anschlag und Übernahme aus, wird aber nie gültig), 0,85 s
+		// danach der eigentliche Anschlag. Vorher stand der alte Wert hell als „tracking“, und
+		// der neue kam spät oder erst nach der Haltezeit von 3 s.
+		const rate = 48000;
+		const st = string("B0");
+		const opts = { sampleRate: rate, midi: st.midi, B: st.B, fundamentalDb: st.fundamentalDb, durationSec: 7.5, noiseDb: null };
+		const first = S.pluck({ ...opts, cents: -5, t60: st.t60, startSec: 1, peakDb: -30, seed: 1 });
+		const grip = S.pluck({ ...opts, cents: 0, t60: 1.5, startSec: 4.6, peakDb: -78, seed: 2, pitch: (t) => 25 * Math.sin(2 * Math.PI * 6 * t) });
+		const strike = S.pluck({ ...opts, cents: 3, t60: st.t60, startSec: 5.45, peakDb: -30, seed: 3 });
+		const x = new Float64Array(first.clean.length);
+		for (let i = 0; i < x.length; i++) {
+			const t = i / rate;
+			const damp = t < 4 ? 1 : Math.pow(10, (-50 * Math.min(1, (t - 4) / 0.06)) / 20);
+			x[i] = first.clean[i] * damp + (t < 5.45 ? grip.clean[i] : 0) + strike.clean[i];
+		}
+		S.addNoise(x, Math.pow(10, -100 / 20), 5);
+		const tl = S.runTuner(new TunerEngine(rate), Float32Array.from(x), rate, { everySeconds: 0.01 });
+		const stale = tl.filter((e) => e.t > 4.3 && e.t < 5.45 && e.r.state === "tracking");
+		ok("Griffgeräusch: der alte Wert bleibt gedimmt („held“), nie hell als gemessen", stale.length === 0, stale.length ? `ab ${f2(stale[0].t)} s „tracking“ ${f2(stale[0].r.cents)}` : "");
+		const reach = tl.find((e) => e.t > 5.45 && e.r.state === "tracking" && Math.abs(e.r.cents - 3) <= 1);
+		ok("Anschlag danach: neuer Wert (+3 ± 1 Cent) nach höchstens 0,35 s", reach && reach.t - 5.45 <= 0.35, reach ? `nach ${f2(reach.t - 5.45)} s` : "nie");
+		const later = tl.filter((e) => e.t > 6 && e.t < 7.5);
+		ok("danach durchgehend verfolgt", later.every((e) => e.r.state === "tracking" && e.r.noteName === "B" && Math.abs(e.r.cents - 3) <= 0.5));
+	}
 
 	section("Tuner: Blockgrößen, Abtastraten, Rechenzeit");
 	{

@@ -47,6 +47,8 @@
  *      guten Wert; nach holdSeconds „silent". Wird das Band in der Haltezeit wieder
  *      gültig (Schwebung), geht es ohne neuen Anschlag weiter. Fällt die Leistung binnen
  *      150 ms um 12 dB (Saite abgedämpft), wird sofort der Wert von davor gehalten.
+ *      Kommt ein Anschlag, bevor ein Versuch je gültig war (Griffgeräusch nach dem
+ *      Abdämpfen, dann der eigentliche Anschlag), beginnt der Versuch dort neu.
  *   5. Anzeige: einpolige Glättung (smoothingSeconds), im leisen Ausklang länger.
  */
 import { FrontEnd, LOW_DECIMATION, SlidingBuffer } from "./filters";
@@ -509,7 +511,9 @@ export class TunerEngine {
 			octave: octaveOf(this.note),
 			cents,
 			frequency: this.noteFrequency * Math.pow(2, cents / 1200),
-			state: this.mode === "track" ? "tracking" : "held",
+			// Ein Versuch, der noch nie gültig war, zeigt nur den alten Wert: gehalten
+			// (gedimmt), bis Stufe 2 den neuen hat — nicht hell, als wäre er gemessen.
+			state: this.mode === "track" && this.stage2Ever ? "tracking" : "held",
 			inTune: Math.abs(cents) <= IN_TUNE_CENTS,
 			clarity: this.clarity,
 			level,
@@ -546,9 +550,16 @@ export class TunerEngine {
 			this.lastOnsetIndex = this.index - this.hopSamples;
 			this.lastOnsetHop = hopIndex;
 			this.onsets++;
-			// Neuer Anschlag: Die Regression beginnt neu (Phasensprung beim Wiederanschlag),
-			// das Einschwingen der Nachbarbänder zählt nicht zum Rauschen.
-			if (this.bank !== null) {
+			if (this.bank !== null && this.mode === "track" && !this.stage2Ever) {
+				// Anschlag, bevor die Verfolgung je gültig war: Meist hat ein Griffgeräusch nach
+				// dem Abdämpfen den Versuch ausgelöst, und jetzt kommt der eigentliche Anschlag
+				// (Bass-Aufnahmen 2026-10-07: sonst 3 s Haltezeit trotz klingender Saite). Der
+				// Versuch beginnt hier neu — Bänder ab dem Anschlag, das aus dem Geräusch Gelernte
+				// verworfen, die Frist ab jetzt.
+				this.restartAttempt(hopIndex);
+			} else if (this.bank !== null) {
+				// Neuer Anschlag: Die Regression beginnt neu (Phasensprung beim Wiederanschlag),
+				// das Einschwingen der Nachbarbänder zählt nicht zum Rauschen.
 				const b = this.bank.basebandIndex(this.lastOnsetIndex);
 				this.regStart = Math.max(this.regStart, b);
 				this.excludeNoise(b);
@@ -678,9 +689,14 @@ export class TunerEngine {
 	}
 
 	private holdStep(hopIndex: number, est: Estimate | null): void {
+		// Kam der Versuch nie zur Anzeige (Frist abgelaufen, die Saite klingt aber weiter):
+		// weiter lernen wie vor der ersten Anzeige, sonst wird die Unsicherheit beim Bass
+		// nie klein genug, um wieder aufzunehmen.
+		if (!this.stage2Ever && est && !est.pending) this.learnPartials(est);
 		if (!this.damped && est && est.valid && est.se <= REACQUIRE_ERROR_SHARE * this.o.maxErrorCents) {
 			if (++this.validStreak >= REACQUIRE_FRAMES) {
 				this.mode = "track";
+				this.stage2Ever = true;
 				this.invalidStreak = 0;
 				this.show(est);
 				return;
@@ -794,6 +810,20 @@ export class TunerEngine {
 		this.retargetStreak = 0;
 		this.displaySet = keep;
 		if (!keep) this.source = "none";
+	}
+
+	/**
+	 * Unbestätigten Versuch ab dem eben erkannten Anschlag neu beginnen (dieselbe Note).
+	 * lockIndex bleibt: Liefert Stufe 1 nach diesem Anschlag eine andere Note, gilt er
+	 * weiter als frisch, und sie wird sofort übernommen.
+	 */
+	private restartAttempt(hopIndex: number): void {
+		this.startBands(this.note, true);
+		this.lockHop = hopIndex;
+		this.entryStreak = 0;
+		this.invalidStreak = 0;
+		this.validStreak = 0;
+		this.retargetStreak = 0;
 	}
 
 	/** Stufe 2 hat die Saite über die Notengrenze wandern sehen: Nachbarnote verfolgen. */
