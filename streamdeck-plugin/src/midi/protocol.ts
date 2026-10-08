@@ -1,6 +1,7 @@
 /**
- * Protokoll 4 zwischen Stream Deck und dem Nuendo-Script Vincent_Tone3000.js:
- * alles aus Protokoll 3, dazu der Tuner-Modus (0x13) und die Stimmanzeige (0x24).
+ * Protokoll 5 zwischen Stream Deck und dem Nuendo-Script Vincent_Tone3000.js:
+ * alles aus Protokoll 3, dazu der Tuner-Modus (0x13) und die Stimmanzeige (0x24)
+ * aus Protokoll 4 und die Kette (0x14, 0x25) aus Protokoll 5.
  *
  * Maßgeblich ist docs/protokoll.md im Projektordner; die Abschnittsnummern in den
  * Kommentaren beziehen sich darauf. Dieses Modul kennt nur Bytes: Kodieren,
@@ -21,6 +22,8 @@ export const MSG_SET_PARAM = 0x11;
 export const MSG_SELECT_PRESET = 0x12;
 /** Tuner-Modus an/aus (Protokoll 4). */
 export const MSG_TUNER_MODE = 0x13;
+/** Kette sicherstellen: Slot 2 H-Delay Mono, Slot 3 TONE3000 (Protokoll 5). */
+export const MSG_CHAIN = 0x14;
 
 // Typbytes Nuendo → Deck (4.2)
 export const MSG_PARAM = 0x20;
@@ -29,6 +32,8 @@ export const MSG_FLAGS = 0x22;
 export const MSG_SLOT = 0x23;
 /** Stimmanzeige des Steinberg-Tuners in Slot 1 (Protokoll 4). */
 export const MSG_TUNER = 0x24;
+/** Ergebnis der Kette je Slot (Protokoll 5). */
+export const MSG_CHAIN_RESULT = 0x25;
 export const MSG_DEBUG = 0x7f;
 
 /** Note On auf MIDI-Kanal 3 (4.1, „Tasten auf MIDI-Kanal 3"). */
@@ -203,6 +208,26 @@ export function buildTunerMode(on: boolean): number[] {
 	return sysex(MSG_TUNER_MODE, [on ? 1 : 0]);
 }
 
+/**
+ * `F0 7D 14 F7` — Kette sicherstellen (Protokoll 5): Das Script lädt im Leerlauf, was in
+ * Slot 2 (H-Delay Mono, frisch im Bypass) und Slot 3 (TONE3000) fehlt, und antwortet mit 0x25.
+ */
+export function buildChain(): number[] {
+	return sysex(MSG_CHAIN, []);
+}
+
+/** Ergebnis je Slot in 0x25 (Script: CHAIN_*). */
+export const CHAIN_PRESENT = 0;
+export const CHAIN_LOADED = 1;
+export const CHAIN_NOT_LISTED = 2;
+export const CHAIN_REFUSED = 3;
+export const CHAIN_NO_SLOT = 4;
+export const CHAIN_MISMATCH = 5;
+export const CHAIN_NO_CHANNEL = 6;
+export const CHAIN_ERROR = 7;
+/** Text je Code, fürs Log. */
+export const CHAIN_CODE_TEXT = ["war da", "geladen", "nicht in der Plugin-Liste", "Laden abgelehnt", "Slot fehlt", "geladen, Bypass nicht übernommen", "Kanal fehlt", "Fehler"];
+
 /** `92 <n> <vel>` — Taste n auf Kanal 3, Velocity = Zielzustand, kein Note Off (4.1). */
 export function buildNote(note: number, on: boolean): number[] {
 	return [NOTE_ON_CH3, note & 0x7f, on ? VELOCITY_ON : VELOCITY_OFF];
@@ -223,8 +248,10 @@ export type DebugFrame = { type: "debug"; text: string };
  * wie gesendet; begrenzt wird im Store), note ohne umgebende Leerzeichen ("E", "F#", "--").
  */
 export type TunerFrame = { type: "tuner"; flags: number; cent: number; oct: number; note: string };
+/** 0x25 (Protokoll 5): Code je Slot der Kette, delay = Slot 2, amp = Slot 3 (TONE3000). */
+export type ChainFrame = { type: "chain"; delay: number; amp: number };
 /** Frames, die den Zustand des Decks ändern. */
-export type StateFrame = ParamFrame | PresetFrame | FlagsFrame | SlotFrame | TunerFrame;
+export type StateFrame = ParamFrame | PresetFrame | FlagsFrame | SlotFrame | TunerFrame | ChainFrame;
 export type InFrame = PongFrame | StateFrame | DebugFrame;
 
 /**
@@ -268,6 +295,8 @@ export function parseFrame(bytes: ArrayLike<number>): InFrame | null {
 			if (note === null) return null;
 			return { type: "tuner", flags: data[0], cent: data[1] - TUNER_OFFSET, oct: data[2] - TUNER_OFFSET, note: note.trim() };
 		}
+		case MSG_CHAIN_RESULT:
+			return data.length === 2 && data[0] <= CHAIN_ERROR && data[1] <= CHAIN_ERROR ? { type: "chain", delay: data[0], amp: data[1] } : null;
 		case MSG_DEBUG: {
 			const text = decodeText(data);
 			return text === null ? null : { type: "debug", text };
@@ -307,6 +336,8 @@ export function describeMessage(bytes: ArrayLike<number>): string {
 				return `SLOT s${f.slot} "${f.name}"`;
 			case "tuner":
 				return `TUNER 0x${hex2(f.flags)} "${f.note}" oct ${f.oct} cent ${f.cent}`;
+			case "chain":
+				return `KETTE Delay ${CHAIN_CODE_TEXT[f.delay]}, TONE3000 ${CHAIN_CODE_TEXT[f.amp]}`;
 			case "debug":
 				return `DEBUG ${f.text}`;
 		}
@@ -320,6 +351,8 @@ export function describeMessage(bytes: ArrayLike<number>): string {
 			return `SELECT "${decodeText(Array.from(bytes).slice(3, bytes.length - 1)) ?? "?"}"`;
 		case MSG_TUNER_MODE:
 			return bytes.length === 5 && bytes[3] <= 1 ? `TUNER-MODUS ${bytes[3] === 1 ? "an" : "aus"}` : `SYSEX ${hex(bytes)}`;
+		case MSG_CHAIN:
+			return bytes.length === 4 ? "KETTE" : `SYSEX ${hex(bytes)}`;
 		default:
 			return `SYSEX ${hex(bytes)}`;
 	}

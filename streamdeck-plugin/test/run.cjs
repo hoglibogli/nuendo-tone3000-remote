@@ -4,7 +4,7 @@
  * Attrappe und führt die Tests der Reihe nach aus. Kein MIDI-Port wird geöffnet,
  * nichts ausgerollt; Nuendo und Stream Deck bleiben unberührt.
  *
- *   protocol  Kodieren/Dekodieren, Beispielsitzung aus docs/protokoll.md 7
+ *   protocol  Kodieren/Dekodieren, Beispielsitzung aus docs/protokoll.md 9
  *   logic     Wächter, Store, Session, Drossel (Uhr von Hand)
  *   midi      MidiManager gegen Ports im Speicher
  *   e2e       das echte Nuendo-Script im Stub über ein Portpaar im Speicher

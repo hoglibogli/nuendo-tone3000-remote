@@ -47,9 +47,10 @@ function readyHost(options = {}) {
 	h.load(SCRIPT);
 	h.setInputTitles();
 	h.setSlotTitle(6, 0, "Tuner");
-	h.setSlotTitle(6, 1, "H-Delay Mono");
-	h.setSlotTitle(6, 2, "TONE3000");
-	h.setHostValue("ch6.slot1.bypass", 1);
+	const title = (opt, name) => (opt === undefined || opt === "delay" || opt === "tone3000" ? name : opt === "leer" ? "" : opt);
+	h.setSlotTitle(6, 1, title(options.slot2, "H-Delay Mono"));
+	h.setSlotTitle(6, 2, title(options.slot3, "TONE3000"));
+	h.setHostValue("ch6.slot1.bypass", options.slot2 === undefined || options.slot2 === "delay" ? 1 : 0);
 	h.activate();
 	h.settle();
 	return h;
@@ -437,6 +438,7 @@ async function runAll(scriptConsole) {
 
 	if (stubTuner && scriptTuner) await tunerOnDeck();
 	ownTunerChannelMute();
+	chainOnDeck();
 
 	ok("keine Ausnahmen im Script", r.host.callbackErrors.length === 0 && e.host.callbackErrors.length === 0, [...r.host.callbackErrors, ...e.host.callbackErrors].join(" | "));
 	ok("Script-Konsole mitgeschrieben (Aktivierung)", scriptConsole.some((l) => /TONE3000 Remote aktiv/.test(l)), scriptConsole.join(" / "));
@@ -469,7 +471,7 @@ function ownTunerChannelMute() {
 	from = o.toScript.length;
 	o.session.pressTuner(false);
 	o.pump();
-	check("Taste aus: Input 6 wieder offen, Merker weg, Kindprozess gestoppt", [chMute(), o.toScript.slice(from).map(hex), markers, port.stops], [0, ["92 00 00"], [true, false], 1]);
+	check("Taste aus: Input 6 wieder offen, Kette (0x14), Merker weg, Kindprozess gestoppt", [chMute(), o.toScript.slice(from).map(hex), markers, port.stops], [0, ["92 00 00", "F0 7D 14 F7"], [true, false], 1]);
 
 	// Input 6 schon stumm (z. B. Projekt mit laufendem Tuner gespeichert): Einschalten
 	// fasst ihn nicht an, Ausschalten entmutet trotzdem — Wunsch des Users 2026-10-02.
@@ -498,6 +500,53 @@ function ownTunerChannelMute() {
 	o.step(20000);
 	check("neuer Plugin-Prozess mit Merker: erstes 0x22 hebt die Mute auf", [o.session.connected, chMute(), o.session.store.channelMuted], [true, 0, false]);
 	ok("keine Ausnahmen im Script (eigener Tuner)", o.host.callbackErrors.length === 0, o.host.callbackErrors.join(" | "));
+}
+
+/**
+ * Kette (Protokoll 5) gegen das echte Script: Mono In 6 ohne Delay, mit fremdem Amp in
+ * Slot 3. Tuner-Modus an und aus, das Script lädt im Leerlauf, das Deck holt das zuletzt
+ * aktive Preset zurück, und das Programm 0 des frischen TONE3000 wird nicht gemerkt.
+ */
+function chainOnDeck() {
+	section("E2E: Kette beim Verlassen des Tuner-Modus am echten Script");
+	const port = { start() {}, stop() {}, listen() {} };
+	const saved = [];
+	const results = [];
+	const own = { source: "own", muteChannel: true, input: { device: "MADI (5+6)", channel: 1 }, a4: 440 };
+	const o = rig({ slot2: "leer", slot3: "Amp Room" }, { tuner: own, session: { ownTuner: port, onLastPreset: (n) => saved.push(n) } });
+	o.session.onChainResult((x) => results.push(x));
+	o.session.restoreLastPreset("HMT"); // aus den globalen Einstellungen
+	o.step(0);
+	const st = o.session.store;
+	check("vorher: kein Delay, fremdes Plugin in Slot 3, bit6 = 0", [st.slots[1], st.slots[2], (st.flags & 0x40) === 0], ["", "Amp Room", true]);
+	o.at(500);
+	o.session.pressTuner(false);
+	o.pump();
+	let from = o.toScript.length;
+	o.session.pressTuner(false);
+	o.pump();
+	check("Modus aus: Mute auf und 0x14 kommen beim Script an", o.toScript.slice(from).map(hex), ["92 00 00", "F0 7D 14 F7"]);
+	check("im SysEx-Callback noch nichts geladen", o.host.loads.length, 0);
+	from = o.toScript.length;
+	o.host.idle(4, 150);
+	o.pump();
+	check("Leerlauf: H-Delay Mono in Slot 2, TONE3000 ersetzt den fremden Amp in Slot 3", o.host.loads.map((l) => `${l.slotID}:${l.name}`), ["302:H-Delay Mono", "303:TONE3000"]);
+	check("0x25 am Deck: beide geladen", results, [{ type: "chain", delay: 1, amp: 1 }]);
+	check("Deck holt das zuletzt aktive Preset zurück (0x12 HMT), dann die Abfrage", sysexToScript(o, from), ["F0 7D 12 " + hex(P.encodeText("HMT")) + " F7", "F0 7D 10 F7"]);
+	check("danach: Slotnamen, TONE3000 auf HMT, Delay im Bypass (bit2), bit6", [st.slots[1], st.slots[2], st.preset, (st.flags & 0x04) !== 0, (st.flags & 0x40) !== 0], ["H-Delay Mono", "TONE3000", "HMT", true, true]);
+	check("das Programm 0 des frischen TONE3000 nie als zuletzt aktiv gemerkt", [st.lastPreset, saved], ["HMT", []]);
+	o.step(10000);
+	o.step(20000);
+	check("spätere Abfragen: HMT bleibt das zuletzt aktive", st.lastPreset, "HMT");
+	from = o.toScript.length;
+	o.session.pressTuner(false);
+	o.pump();
+	o.session.pressTuner(false);
+	o.pump();
+	o.host.idle(4, 150);
+	o.pump();
+	check("noch einmal: beide da, nichts geladen, kein 0x12", [o.host.loads.length, results[1], sysexToScript(o, from).filter((x) => x.startsWith("F0 7D 12"))], [2, { type: "chain", delay: 0, amp: 0 }, []]);
+	ok("keine Ausnahmen im Script (Kette)", o.host.callbackErrors.length === 0, o.host.callbackErrors.join(" | "));
 }
 
 /**
@@ -591,7 +640,7 @@ async function tunerOnDeck() {
 	from = v.toScript.length;
 	press();
 	await settle();
-	check("zweiter Druck: 0x13 00", sysexToScript(v, from), ["F0 7D 13 00 F7"]);
+	check("zweiter Druck: 0x13 00, dazu die Kette (0x14)", sysexToScript(v, from), ["F0 7D 13 00 F7", "F0 7D 14 F7"]);
 	check("Mute des Tuners im Stub wieder aus; Modus aus", [muteOf(), v.session.tunerActive(), v.session.store.tuner.mode, v.session.store.tuner.muted], [0, false, false, false]);
 	check("Regler zurück, mit den Werten von vorher", knobsShow(HOST_VALUES), all4);
 	check("Tuner-Taste wieder wie bisher", image() === render.renderToggleKey("tuner", false, OK), true);

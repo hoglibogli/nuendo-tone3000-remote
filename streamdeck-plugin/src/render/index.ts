@@ -66,9 +66,10 @@ export function renderTunerSegment(index: number, state: TunerState | null, stat
 }
 
 /**
- * Tuner-Taste 144x144 im Tuner-Modus: Note in klarer Schrift, Cent-Balken, Lampe.
- * redEdge: roter statt goldener Rahmen (automatische Stummschaltung an).
+ * Tuner-Taste 144x144: Note in klarer Schrift, Cent-Balken, Lampe. active: große Anzeige
+ * in der Leiste an (heller Rahmen). redEdge: roter statt goldener Rahmen (automatische
+ * Stummschaltung an).
  */
-export function renderTunerKey(state: TunerState | null, status: Status, redEdge = false): string {
-	return tunerKey(state, status, redEdge);
+export function renderTunerKey(state: TunerState | null, status: Status, redEdge = false, active = true): string {
+	return tunerKey(state, status, redEdge, active);
 }

@@ -64,7 +64,7 @@
 			"Name": "Tuner",
 			"UUID": "com.sorg.tone3000.tuner",
 			"Icon": "imgs/actions/tuner/icon",
-			"Tooltip": "Kurz: Tuner-Modus an/aus — die Touch-Leiste zeigt die Stimmanzeige (eigener Tuner auf MADI 6), die Regler ruhen. Lang: automatische Stummschaltung von Input 6 an/aus; roter Rahmen = an.",
+			"Tooltip": "Die Taste stimmt immer mit (eigener Tuner auf MADI 6). Kurz: große Stimmanzeige in der Touch-Leiste an/aus, dazu Input 6 stumm; die Regler ruhen. Beim Ausschalten lädt Nuendo H-Delay und TONE3000 nach, falls sie fehlen. Lang: automatische Stummschaltung an/aus; roter Rahmen = an.",
 			"Controllers": [
 				"Keypad"
 			],

@@ -40,6 +40,10 @@ Namen und Tasten (Mute, Delay-Bypass, Fenster von Tuner, Delay und TONE3000) an 
 meldet Werte, Presetnamen, Zustände und Plugin-Namen zurück. Ab Protokoll 4 dazu eine
 Stimmanzeige: Im Tuner-Modus des Decks schaltet es den Ausgang von Steinbergs „Tuner" in
 Slot 1 stumm und reicht Note, Oktave und Cent weiter (`docs/protokoll.md` Abschnitt 5).
+Ab Protokoll 5 die Kette: Verlässt das Deck den Tuner-Modus, lädt das Script H-Delay Mono
+in Slot 2 (im Bypass) und TONE3000 in Slot 3, falls sie fehlen — ein anderes Plugin dort
+wird ersetzt —, und das Deck holt danach das zuletzt aktive Preset zurück
+(`docs/protokoll.md` Abschnitt 6).
 Das vollständige
 Protokoll — Bytes, Bits, Kodierung, Grenzen, Beispielsitzung — steht in
 [`docs/protokoll.md`](docs/protokoll.md); das Plugin wird genau dagegen gebaut.
@@ -73,13 +77,17 @@ Vorgabe an der Tuner-Taste ist der **eigene Tuner** im Stream-Deck-Plugin; Stein
 direkt am Audio-Interface mit, an Nuendo vorbei: WASAPI im geteilten Modus, genau ein
 Mono-Kanal (Vorgabe MADI 6 aus dem Windows-Paar „MADI (5+6)"). RME erlaubt das parallel
 zu Nuendos ASIO; das Paar muss in den RME-Einstellungen unter „WDM Devices" freigegeben
-sein. Er läuft in einem eigenen Kindprozess (`bin/tuner-worker.js`) und nur im
-Tuner-Modus; ein Absturz dort berührt die MIDI-Verbindung nicht.
+sein. Er läuft in einem eigenen Kindprozess (`bin/tuner-worker.js`), solange die
+Tuner-Taste auf dem Deck liegt (oder der Tuner-Modus an ist); ein Absturz dort berührt
+die MIDI-Verbindung nicht.
 
-Tuner-Taste: kurzer Druck schaltet den Tuner-Modus (beim Loslassen), langer Druck ab
-0,5 s die automatische Stummschaltung von Input 6 (Setting `muteChannel`, Vorgabe an).
-Roter statt goldener Rahmen heißt: Stummschaltung an. Beim Ausschalten des Modus wird
-Input 6 immer wieder offen geschaltet.
+Tuner-Taste: Sie zeigt die Stimmanzeige immer. Ein kurzer Druck schaltet den Tuner-Modus
+(beim Loslassen): große Anzeige in der Touch-Leiste, Regler ruhen, Input 6 stumm, heller
+Rahmen. Ein langer Druck ab 0,5 s schaltet die automatische Stummschaltung von Input 6
+(Setting `muteChannel`, Vorgabe an). Roter statt goldener Rahmen heißt: Stummschaltung
+an. Beim Ausschalten des Modus wird Input 6 immer wieder offen geschaltet, und das Script
+lädt H-Delay Mono (Slot 2) und TONE3000 (Slot 3) nach, falls sie fehlen; die Taste zeigt
+dann ein Häkchen, bei einem Fehler ein Warndreieck.
 
 Verfahren (`streamdeck-plugin/src/tuner`): YIN findet die Note (zwei Fenster, 26 Hz bis
 1,4 kHz, Oktavprüfung für Bass), danach verfolgt ein schmalbandiger Heterodyn-Empfänger
@@ -114,9 +122,9 @@ audify mitgelieferte Binärdatei stürzte darunter ab (0xC0000005), unter Node 2
 Nach einer Script-Änderung muss Nuendo neu starten — sonst antwortet weiter die
 alte Fassung (am 2026-10-01 genau so passiert: der Lauf kam, aber vom alten
 Script). Die erste Zeile des Laufs nennt die Protokollfassung, etwa
-`--- Suchlauf TONE3000 Remote, Protokoll 4, Ziel "Mono In 6" ---`. Fehlt sie oder
+`--- Suchlauf TONE3000 Remote, Protokoll 5, Ziel "Mono In 6" ---`. Fehlt sie oder
 steht dort weniger als 2, läuft noch eine alte Fassung; das Werkzeug lässt dann alle
-Aktionen aus und meldet „Script veraltet". Für das Deck braucht es Protokoll 3, für die Stimmanzeige 4.
+Aktionen aus und meldet „Script veraltet". Für das Deck braucht es Protokoll 3, für die Stimmanzeige 4, für die Kette 5.
 
 ## Presetwechsel prüfen (TONE3000 ab 0.0.9)
 

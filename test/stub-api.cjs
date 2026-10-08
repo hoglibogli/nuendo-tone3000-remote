@@ -138,7 +138,12 @@ function param(tag, title, o = {}) {
 /**
  * Ein nachgebauter Host. options:
  *   slot1      "tuner" (Vorgabe, Steinbergs Tuner) | "gtr" (GTR Tuner Mono) | "leer" | ein anderer Titel
+ *   slot2      "delay" (Vorgabe, H-Delay Mono) | "leer" | ein anderer Plugin-Titel
  *   slot3      "tone3000" (Vorgabe) | "leer" | ein anderer Plugin-Titel
+ *   pluginList Einträge der Plugin-Sammlung (mPluginName, mPluginVendor, mPluginUID, …);
+ *              Vorgabe ein Auszug aus Nuendos Liste (FaderBank E-34)
+ *   refuseLoad true: trySetSlotPlugin liefert false
+ *   noActiveCollection true: keine aktive Sammlung (-1), nur die Standard-Sammlung
  *   programAt  Index von "Program" (Vorgabe 44 wie in 0.0.11; 450 = mitten im MIDI-CC-Block)
  *   programNotifies  true: auch "Program" meldet einen Callback (am Gerät: nein)
  *   ownSetsNotify    true: ein Plugin meldet auch Werte, die das Script per DirectAccess setzt
@@ -175,6 +180,7 @@ function createHost(options = {}) {
 		removed: new Set(),
 		hostValues: new Map(),
 		faults: [],
+		loads: [], // { slotID, name, id, dontAskDiscard } je trySetSlotPlugin, das geladen hat
 		calls: { total: 0 }, // DirectAccess-Aufrufe je Name, für Kostenprüfungen
 		asyncMs: -1, // < 0: Callbacks synchron; sonst so viele echte ms verzögert
 		mapping: { name: "activeMapping" },
@@ -339,8 +345,10 @@ function createHost(options = {}) {
 	else if (slot1 !== "leer") obj(TUNER, "Plugin", slot1, [param(7, "Gain")]);
 	if (slot1 !== "leer") host.objects[SLOT_BASE + 1].kids = [TUNER];
 	// Delay mit 450 Parametern: prüft die Obergrenze gelisteter Zeilen im Suchlauf.
-	obj(DELAY, "Plugin", "H-Delay Mono", Array.from({ length: 450 }, (_, i) => param(10000 + i, `Delay Param ${i}`)));
-	host.objects[SLOT_BASE + 2].kids = [DELAY];
+	const slot2 = options.slot2 ?? "delay";
+	if (slot2 === "delay") obj(DELAY, "Plugin", "H-Delay Mono", Array.from({ length: 450 }, (_, i) => param(10000 + i, `Delay Param ${i}`)));
+	else if (slot2 !== "leer") obj(DELAY, "Plugin", slot2, [param(7, "Gain")]);
+	if (slot2 !== "leer") host.objects[SLOT_BASE + 2].kids = [DELAY];
 	const slot3 = options.slot3 ?? "tone3000";
 	if (slot3 === "tone3000") {
 		makeTone3000(TONE3000);
@@ -529,6 +537,64 @@ function createHost(options = {}) {
 		return p;
 	}
 
+	//--------------------------------------------------------------------------
+	// Plugin-Manager (FaderBank E-34): Sammlung lesen, in einen Slot laden
+	//--------------------------------------------------------------------------
+	const PLUGIN_LIST = options.pluginList ?? [
+		{ mPluginName: "Compressor", mPluginVendor: "Steinberg Media Technologies", mPluginUID: "5B38F28281144FFE80285FF7CCF20483", mCollectionPath: "/Dynamics" },
+		{ mPluginName: "H-Delay Mono", mPluginVendor: "Waves", mPluginUID: "5653544842444D682D64656C6179206D", mCollectionPath: "/Delay" },
+		{ mPluginName: "H-Delay Mono/Stereo", mPluginVendor: "Waves", mPluginUID: "5653544842444D732D64656C6179206D", mCollectionPath: "/Delay" },
+		{ mPluginName: "H-Delay Stereo", mPluginVendor: "Waves", mPluginUID: "56535448424453682D64656C61792073", mCollectionPath: "/Delay" },
+		{ mPluginName: "TONE3000", mPluginVendor: "TONE3000", mPluginUID: "ABCDEF019182FAEB5446544654334B30", mCollectionPath: "/Other" },
+	];
+	let nextPluginID = 5000;
+
+	/**
+	 * Ein Plugin in einen Slot laden wie Nuendo: nur am Objekt "Slot n" (an Inserts oder am
+	 * Kanal liefert der Plugin-Manager nichts), synchron, ersetzt das alte Plugin. Ohne
+	 * dontAskDiscard fragte Nuendo bei einem belegten Slot in einem modalen Dialog — der
+	 * Stub wirft, damit ein Test das nie übersieht. Der neue Name kommt über die
+	 * Parameter-Bank-Zone jedes Viewers auf diesem Slot.
+	 */
+	function loadIntoSlot(slotID, uid, dontAskDiscard) {
+		const slot = host.objects[slotID];
+		if (!slot || slot.type !== "Slot" || host.removed.has(slotID)) return false;
+		const entry = PLUGIN_LIST.find((e) => e.mPluginUID === uid);
+		if (!entry || options.refuseLoad) return false;
+		if (slot.kids.length && !dontAskDiscard) throw new Error("modaler Dialog: belegten Slot ersetzen?");
+		for (const old of slot.kids) host.removed.add(old);
+		const id = nextPluginID++;
+		if (entry.mPluginName === "TONE3000") makeTone3000(id);
+		else obj(id, "Plugin", entry.mPluginName, [param(7, "Gain")], [], `${uid}-0`);
+		slot.kids = [id];
+		host.loads.push({ slotID, name: entry.mPluginName, id, dontAskDiscard });
+		logHost(`trySetSlotPlugin Slot ${slot.title}: ${entry.mPluginName} (id=${id})`);
+		const n = slotID - SLOT_BASE;
+		if (n >= 1 && n <= 16) host.setSlotTitle("ch6", n - 1, entry.mPluginName);
+		return true;
+	}
+
+	function makePluginManager(a) {
+		const pm = {
+			getIndexOfActivePluginCollection: () => (options.noActiveCollection ? -1 : 0),
+			getIndexOfDefaultPluginCollection: () => 0,
+			getPluginCollectionByIndex: (m, slotID, index) => (index === 0 ? { mEntries: PLUGIN_LIST.map((e) => ({ ...e })) } : null),
+			trySetSlotPlugin: (m, slotID, uid, dontAskDiscard) => loadIntoSlot(slotID, uid, dontAskDiscard),
+		};
+		const out = {};
+		for (const [name, fn] of Object.entries(pm)) {
+			out[name] = (...args) => {
+				host.calls[name] = (host.calls[name] || 0) + 1;
+				host.calls.total++;
+				if (!args[0]) throw new Error(`${name} ohne activeMapping`);
+				if (!a.activated) throw new Error(`${name} vor activate()`);
+				checkFault(name, args);
+				return fn(...args);
+			};
+		}
+		return out;
+	}
+
 	function makeAccess(channel) {
 		const index = channel.index;
 		const a = {
@@ -614,6 +680,7 @@ function createHost(options = {}) {
 				return fn(...args);
 			};
 		}
+		a.mPluginManager = makePluginManager(a);
 		channel.accesses.push(a);
 		host.accesses.push(a);
 		return a;
@@ -1181,6 +1248,8 @@ function decodeFrame(f) {
 			return { type, slot: body[0], name: hexToText(body.slice(1)) };
 		case 0x24:
 			return { type, flags: body[0], cent: body[1] - 64, oct: body[2] - 64, note: hexToText(body.slice(3)) };
+		case 0x25:
+			return { type, codes: [...body] };
 		case 0x7f:
 			return { type, text: hexToText(body) };
 		default:

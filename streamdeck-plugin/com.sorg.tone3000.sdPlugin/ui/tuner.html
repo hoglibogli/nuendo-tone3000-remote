@@ -39,15 +39,20 @@
 		</sdpi-item>
 
 		<p style="opacity: 0.7; font-size: 11px; padding: 4px 8px">
-			Ein Druck schaltet den <b>Tuner-Modus</b> ein oder aus. Im Modus zeigt die Touch-Leiste über den vier
-			linken Reglern die Stimmanzeige (Note, Nadel, Cent), die Regler ruhen. Ein zweiter Druck beendet ihn.
+			Mit dem eigenen Tuner zeigt die Taste die Stimmanzeige <b>immer</b> (Note, Cent-Balken, Lampe). Ein
+			kurzer Druck schaltet den <b>Tuner-Modus</b> ein oder aus: Die Touch-Leiste über den vier linken
+			Reglern zeigt dann die große Stimmanzeige (Note, Nadel, Cent), die Regler ruhen, und die Taste trägt
+			einen hellen Rahmen. Ein zweiter kurzer Druck beendet ihn. Dabei sorgt Nuendo dafür, dass in
+			Slot 2 von Input 6 das <b>H-Delay Mono</b> (im Bypass) und in Slot 3 <b>TONE3000</b> steckt: Fehlt eins, wird es
+			geladen, ein anderes Plugin dort ersetzt, und TONE3000 bekommt das zuletzt aktive Preset zurück. Häkchen =
+			geladen, Warndreieck = ging nicht (Plugin nicht gefunden, Kanal fehlt).
 		</p>
 
 		<p style="opacity: 0.7; font-size: 11px; padding: 4px 8px">
 			<b>Eigener Tuner</b> (Vorgabe): Das Plugin misst den gewählten <b>Eingang</b> direkt (ein Kanal, Vorgabe
 			MADI 6) und hält ausklingende Saiten lange — auch Bass und Bariton, chromatisch. Noten heißen englisch
 			(B, F#). Mit <b>Input 6 beim Stimmen stummschalten</b> schaltet die Taste Input 6 in Nuendo stumm, solange
-			gestimmt wird; beim Ausschalten wird Input 6 immer wieder offen geschaltet, auch wenn er schon vorher
+			der Tuner-Modus an ist; beim Ausschalten wird Input 6 immer wieder offen geschaltet, auch wenn er schon vorher
 			stumm war (etwa nach dem Speichern mit laufendem Tuner). Ein <b>langer Druck</b> auf die Taste schaltet
 			diese Stummschaltung ein oder aus; ist sie an, trägt die Taste einen <b>roten Rahmen</b>. Der
 			<b>Kammerton</b> gilt für die Anzeige (Vorgabe 440 Hz). Gedimmt heißt: Die Saite ist verklungen oder

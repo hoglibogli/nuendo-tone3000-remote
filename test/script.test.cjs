@@ -353,7 +353,7 @@ expect(shape1.maxLen <= 205, `längster Frame ${shape1.maxLen} <= 205 Byte`);
 expect(has(/^SETZEN 3 abgelehnt: noch kein activeMapping/), "Setzen vor Aktivierung abgelehnt");
 expect(has(/^SETZEN 3 abgelehnt: erst einen Suchlauf ausführen/), "Setzen ohne Suchlauf abgelehnt");
 expect(count(/^--- Setzen fertig ---$/) === setCount, `jedes Setzen endet mit "--- Setzen fertig ---" (${setCount}x)`);
-expect(count(/^--- Suchlauf TONE3000 Remote, Protokoll 4, Ziel "/) === probeCount, `Kopfzeile mit "Protokoll 4" in jedem Suchlauf (${probeCount}x)`);
+expect(count(/^--- Suchlauf TONE3000 Remote, Protokoll 5, Ziel "/) === probeCount, `Kopfzeile mit "Protokoll 5" in jedem Suchlauf (${probeCount}x)`);
 expect(count(/^--- Suchlauf beendet ---$/) === probeCount, `jeder Suchlauf endet genau einmal mit der Schlusszeile, auch nach Ausnahmen (${probeCount}x)`);
 expect(has(/^Ziel: Platz 3 "Mono In 3" \(per Name\)$/) && has(/^DA Basis id=1003 /), "Mono In 3: eigener Platz mit Basis 1003");
 expect(has(/^SETZEN 3 abgelehnt: kein Unterobjekt "Inserts" am Kanal id=1003$/), "Setzen nach Suchlauf Mono In 3 nutzt das DirectAccess-Objekt dieses Laufs (Such-Zone, Platz 3)");
@@ -465,7 +465,8 @@ function readyHost(options = {}, titles = {}) {
 	const slot3 = options.slot3 === undefined ? "TONE3000" : options.slot3 === "leer" ? "" : options.slot3;
 	const slot1 = { tuner: "Tuner", gtr: "GTR Tuner Mono", leer: "" }[options.slot1 ?? "tuner"] ?? options.slot1;
 	h.setSlotTitle(6, 0, slot1);
-	h.setSlotTitle(6, 1, "H-Delay Mono");
+	const slot2 = options.slot2 === undefined || options.slot2 === "delay" ? "H-Delay Mono" : options.slot2 === "leer" ? "" : options.slot2;
+	h.setSlotTitle(6, 1, slot2);
 	h.setSlotTitle(6, 2, slot3);
 	h.setHostValue("ch6.slot1.bypass", 1); // Delay im Bypass wie am Gerät
 	return h;
@@ -1042,13 +1043,13 @@ expect(gl.join(" / ") === [
 	"Preset abgelehnt: Frame ohne F7 am Ende (9 Byte, gekappt?)",
 ].join(" / "), `kaputte Frames: je eine Debugzeile (${gl.join(" / ")})`);
 G.sysex([0xf0, 0x7e, 0x10, 0xf7]);
-G.sysex([0xf0, 0x7d, 0x14, 0xf7]); // 0x13 ist seit Protokoll 4 belegt
-expect(G.sent.length === at + gl.length, "fremde Hersteller-ID und unbekannter Typ (0x14): ignoriert");
+G.sysex([0xf0, 0x7d, 0x15, 0xf7]); // 0x13 seit Protokoll 4, 0x14 seit Protokoll 5 belegt
+expect(G.sent.length === at + gl.length, "fremde Hersteller-ID und unbekannter Typ (0x15): ignoriert");
 
 //--- Beispielsitzung aus docs/protokoll.md, Byte für Byte ------------------------------
 heading("3g Beispielsitzung docs/protokoll.md");
 const docText = fs.readFileSync(path.join(ROOT, "docs", "protokoll.md"), "utf8");
-const docBlock = /```text\r?\n([\s\S]*?)```/.exec(docText.slice(docText.indexOf("## 8 Beispielsitzung")));
+const docBlock = /```text\r?\n([\s\S]*?)```/.exec(docText.slice(docText.indexOf("## 9 Beispielsitzung")));
 const steps = [];
 // "Gitarre E1 -16", "Gitarre E1 +2 gestimmt", "Gitarre Stille": ein Ton am Eingang von Input 6,
 // den der Tuner misst (Ereignis in Nuendo, kein Frame). Danach wie bei "Deck" die Frames des Scripts.
@@ -1654,6 +1655,115 @@ for (let i = 0; i < 40; i++) zsDeck.mAction.mShiftRight.trigger(ZS.mapping);
 ZS.flush();
 expect(ZS.viewers.every((v) => v.channelKey === "ch6" && v.lastTitle === ["Tuner", "H-Delay Mono", "TONE3000"][v.slot]), "Stub: die Viewer des Deck-Kanals zeigen auf Platz 40 die Slotnamen von ch6");
 
+//==============================================================================
+// Teil 6: Protokoll 5 — Kette (Wunsch 2026-10-08: beim Verlassen des Tuner-Modus
+// H-Delay Mono in Slot 2 und TONE3000 in Slot 3 sicherstellen)
+//==============================================================================
+heading("6a Kette vollständig: nichts laden");
+const SEEK_PASS = 150; // SEEK_PASS_MS im Script: ein Leerlauf-Durchgang je Aufruf
+const chainFrames = (h, from = 0) => h.sent.slice(from).map(decodeFrame).filter((d) => d && d.type === 0x25);
+const chainCodes = (h, from = 0) => chainFrames(h, from).map((d) => d.codes.join(",")).join(" | ");
+const KA = start(readyHost());
+at = KA.sent.length;
+logAt = KA.log.length;
+KA.sysex(sysexBytes(0x14));
+expect(KA.sent.length === at && KA.loads.length === 0, "0x14 merkt nur den Auftrag: im SysEx-Callback nichts gesendet, nichts geladen");
+KA.idle(4, SEEK_PASS);
+expect(chainCodes(KA, at) === "0,0", `beide schon da: 0x25 mit 0,0 (${chainCodes(KA, at)})`);
+expect(KA.loads.length === 0 && hostSets(KA, logAt).length === 0, `nichts geladen, nichts gesetzt (${hostSets(KA, logAt).join(" / ")})`);
+expect(debugLines(KA, at).includes("KETTE: Delay war da, TONE3000 war da"), `Debugzeile (${debugLines(KA, at).join(" / ")})`);
+at = KA.sent.length;
+KA.idle(10, SEEK_PASS);
+expect(KA.sent.length === at, "danach Ruhe im Leerlauf");
+
+heading("6b leere Slots: H-Delay Mono im Bypass, TONE3000, ein Slot je Durchgang");
+const KB = start(readyHost({ slot2: "leer", slot3: "leer" }));
+KB.setHostValue("ch6.slot1.bypass", 0);
+sx(KB, 0x10);
+expect((lastFlags(KB) & 0x40) === 0, "vorher: bit6 = 0 (kein TONE3000)");
+at = KB.sent.length;
+KB.sysex(sysexBytes(0x14));
+KB.idle(1, SEEK_PASS);
+expect(KB.loads.map((l) => l.name).join(",") === "H-Delay Mono", `erster Durchgang: nur das Delay (${KB.loads.map((l) => l.name).join(",")})`);
+KB.idle(3, SEEK_PASS);
+expect(KB.loads.map((l) => `${l.slotID}:${l.name}:${l.dontAskDiscard}`).join(",") === "302:H-Delay Mono:true,303:TONE3000:true", `Slot 2 H-Delay Mono, Slot 3 TONE3000, ohne Rückfrage (${KB.loads.map((l) => `${l.slotID}:${l.name}`).join(",")})`);
+expect(chainCodes(KB, at) === "1,1", `0x25 mit 1,1 (${chainCodes(KB, at)})`);
+expect(KB.hostValue("ch6.slot1.bypass") === 1 && KB.objects[302].byTag.get(4102).value === 1, "frisches Delay im Bypass (Slot-Parameter und Hostwert des Viewers)");
+expect(KB.objects[303].byTag.get(4102).value === 0, "TONE3000 nicht im Bypass");
+expect(describeAll(deckFrames(KB, at)).includes('23 s1 "H-Delay Mono"') && describeAll(deckFrames(KB, at)).includes('23 s2 "TONE3000"'), `Slotnamen gehen ans Deck (${describeAll(deckFrames(KB, at))})`);
+expect(debugLines(KB, at).includes("KETTE: Delay geladen, TONE3000 geladen"), `Debugzeile (${debugLines(KB, at).join(" / ")})`);
+at = KB.sent.length;
+sx(KB, 0x10);
+expect((lastFlags(KB, at) & 0x40) === 0x40 && (lastFlags(KB, at) & 0x04) === 0x04, `danach: bit6 (TONE3000 gefunden) und bit2 (Delay im Bypass) (${lastFlags(KB, at)})`);
+at = KB.sent.length;
+sx(KB, 0x12, "HMT");
+expect(describeAll(deckFrames(KB, at)).includes('21 "HMT"'), `Preset auf dem frisch geladenen TONE3000 wählbar (${describeAll(deckFrames(KB, at))})`);
+at = KB.sent.length;
+KB.sysex(sysexBytes(0x14));
+KB.idle(4, SEEK_PASS);
+expect(chainCodes(KB, at) === "0,0" && KB.loads.length === 2, `noch einmal: jetzt beide da (${chainCodes(KB, at)})`);
+
+heading("6c fremde Plugins: ersetzt, ohne Rückfrage");
+const KC = start(readyHost({ slot2: "Pro-Q 3", slot3: "Amp Room" }));
+at = KC.sent.length;
+KC.sysex(sysexBytes(0x14));
+KC.idle(4, SEEK_PASS);
+expect(chainCodes(KC, at) === "1,1" && KC.loads.length === 2 && KC.removed.has(402) && KC.removed.has(403), `beide ersetzt, alte Objekte weg (${chainCodes(KC, at)})`);
+expect(KC.callbackErrors.length === 0, "kein modaler Dialog (der Stub würfe)");
+
+heading("6d H-Delay Stereo zählt, nicht gelistet, abgelehnt, ohne aktive Sammlung");
+const KD = start(readyHost({ slot2: "H-Delay Stereo" }));
+at = KD.sent.length;
+KD.sysex(sysexBytes(0x14));
+KD.idle(4, SEEK_PASS);
+expect(chainCodes(KD, at) === "0,0" && KD.loads.length === 0, `"H-Delay Stereo" gilt als Delay (${chainCodes(KD, at)})`);
+const KE = start(readyHost({ slot3: "leer", pluginList: [{ mPluginName: "H-Delay Mono", mPluginVendor: "Waves", mPluginUID: "5653544842444D682D64656C6179206D" }, { mPluginName: "TONE3000", mPluginVendor: "Fremd", mPluginUID: "ABCDEF019182FAEB5446544654334B30" }, { mPluginName: "TONE3000", mPluginVendor: "TONE3000", mPluginUID: "kaputt" }] }));
+at = KE.sent.length;
+KE.sysex(sysexBytes(0x14));
+KE.idle(4, SEEK_PASS);
+expect(chainCodes(KE, at) === "0,2" && KE.loads.length === 0, `TONE3000 nur mit anderem Hersteller oder ohne gültige UID: nicht gelistet (${chainCodes(KE, at)})`);
+expect(debugLines(KE, at).includes("KETTE: Delay war da, TONE3000 nicht in der Plugin-Liste"), `Debugzeile (${debugLines(KE, at).join(" / ")})`);
+const KF = start(readyHost({ slot2: "leer", refuseLoad: true }));
+at = KF.sent.length;
+KF.sysex(sysexBytes(0x14));
+KF.idle(4, SEEK_PASS);
+expect(chainCodes(KF, at) === "3,0", `trySetSlotPlugin false: abgelehnt (${chainCodes(KF, at)})`);
+const KG = start(readyHost({ slot2: "leer", noActiveCollection: true }));
+at = KG.sent.length;
+KG.sysex(sysexBytes(0x14));
+KG.idle(4, SEEK_PASS);
+expect(chainCodes(KG, at) === "1,0", `ohne aktive Sammlung aus der Standard-Sammlung (${chainCodes(KG, at)})`);
+
+heading("6e Kanal fehlt, vor der Aktivierung, zweiter Auftrag, Ausnahme");
+const KH = newHost({ inputs: ["Stereo In 1-2", "Mono In 1", "Mono In 2"] });
+KH.setInputTitles();
+start(KH);
+at = KH.sent.length;
+KH.sysex(sysexBytes(0x14));
+KH.idle(4, SEEK_PASS);
+expect(chainCodes(KH, at) === "6,6" && KH.loads.length === 0, `kein "Mono In 6": 6,6, nichts geladen (${chainCodes(KH, at)})`);
+const KI = readyHost({ slot2: "leer" });
+KI.sysex(sysexBytes(0x14));
+expect(KI.sent.length === 0, "vor der Aktivierung: nichts gesendet");
+start(KI);
+expect(chainCodes(KI) === "1,0", `nach der Aktivierung und der Deck-Suche ausgeführt (${chainCodes(KI)})`);
+const KJ = start(readyHost({ slot2: "leer", slot3: "leer" }));
+at = KJ.sent.length;
+KJ.sysex(sysexBytes(0x14));
+KJ.idle(1, SEEK_PASS);
+KJ.sysex(sysexBytes(0x14));
+KJ.idle(4, SEEK_PASS);
+expect(chainCodes(KJ, at) === "0,1" && KJ.loads.length === 2, `zweiter Auftrag mitten im ersten: ersetzt ihn, ein 0x25, nichts doppelt (${chainCodes(KJ, at)})`);
+expect(debugLines(KJ, at).includes("KETTE: neuer Auftrag ersetzt den laufenden"), "Debugzeile zum ersetzten Auftrag");
+const KK = start(readyHost({ slot2: "leer" }));
+KK.fail("trySetSlotPlugin");
+at = KK.sent.length;
+KK.sysex(sysexBytes(0x14));
+KK.idle(4, SEEK_PASS);
+expect(chainCodes(KK, at) === "7,0" && KK.callbackErrors.length === 0, `Ausnahme des Hosts: Code 7, der Auftrag läuft zu Ende (${chainCodes(KK, at)})`);
+sx(KK, 0x10);
+expect(KK.sent.length > at, "danach antwortet das Script weiter");
+
 console.log = realLog;
 
 //==============================================================================
@@ -1871,7 +1981,7 @@ async function part2() {
 		runs.push(s1);
 		expect(s1.code === 0, "S1: Exit-Code 0");
 		expect(kindsOf(s1) === "01 02", `S1: nur Ping und Suchlauf geschickt (${kindsOf(s1)})`);
-		expect(/^--- Suchlauf TONE3000 Remote, Protokoll 4, Ziel "Mono In 6" ---$/.test(s1.lines[0]) && s1.lines[s1.lines.length - 1] === "--- Suchlauf beendet ---", "S1: Datei von Kopfzeile (Protokoll 4) bis Schlusszeile");
+		expect(/^--- Suchlauf TONE3000 Remote, Protokoll 5, Ziel "Mono In 6" ---$/.test(s1.lines[0]) && s1.lines[s1.lines.length - 1] === "--- Suchlauf beendet ---", "S1: Datei von Kopfzeile (Protokoll 5) bis Schlusszeile");
 		expect(!fHas(s1, /Beobachtung/), "S1: keine Beobachtung");
 
 		const stateBefore = flow.stateToTool;

@@ -12,6 +12,7 @@ import {
 } from "@elgato/streamdeck";
 import streamDeck from "@elgato/streamdeck";
 
+import { CHAIN_LOADED } from "../midi/protocol";
 import { renderToggleKey, renderTunerKey } from "../render";
 import type { TunerSettingsView } from "../state/session";
 import { Session } from "../state/session";
@@ -90,10 +91,16 @@ export function inputItems(items: readonly InputItem[]): JsonValue[] {
 }
 
 /**
- * Stimmen: Ein kurzer Druck schaltet den Tuner-Modus um (beim Loslassen). Die
- * Touch-Leiste zeigt dann die Stimmanzeige, die Regler ruhen. Ein langer Druck
- * (LONG_PRESS_MS) schaltet die automatische Stummschaltung um; ist sie an, trägt die
- * Taste einen roten statt goldenen Rahmen (Wunsch des Users 2026-10-07).
+ * Stimmen: Mit dem eigenen Tuner zeigt die Taste die Stimmanzeige immer, solange sie auf
+ * dem Deck liegt (Wunsch des Users 2026-10-07). Ein kurzer Druck schaltet den
+ * Tuner-Modus um (beim Loslassen): die große Stimmanzeige in der Touch-Leiste, die Regler
+ * ruhen, und mit der automatischen Stummschaltung ist Input 6 stumm; im Modus trägt die
+ * Taste einen hellen Rahmen. Ein langer Druck (LONG_PRESS_MS) schaltet die automatische
+ * Stummschaltung um; ist sie an, ist der Rahmen rot statt golden.
+ *
+ * Verlässt ein kurzer Druck den Modus, prüft das Script die Kette (Protokoll 5): fehlt
+ * H-Delay Mono in Slot 2 oder TONE3000 in Slot 3, lädt es sie (Wunsch 2026-10-08). Die
+ * Taste zeigt danach ein Häkchen (geladen) oder ein Warndreieck (gescheitert).
  *
  * Quelle (Setting „source"):
  *   own        Eigener Tuner (Vorgabe): Das Plugin misst den gewählten Eingang selbst
@@ -104,11 +111,11 @@ export function inputItems(items: readonly InputItem[]): JsonValue[] {
  *   steinberg  Steinbergs Tuner in Slot 1 wie bisher (0x13/0x24, dessen eigene Mute);
  *              „openWindow" öffnet dazu sein Fenster.
  *
- * Im Modus zeigt die Taste die Note in klarer Schrift mit Cent-Balken und Lampe
- * (renderTunerKey), höchstens alle 100 ms neu; außerhalb das gewohnte Bild mit Lampe
- * und „Tuner" (renderToggleKey). Steinberg: klein „Tuner?", wenn der Tuner fehlt,
- * „stumm", wenn seine Mute ohne Modus anliegt. Eigener Tuner ohne Eingang: Taste
- * „Eingang?", Leiste „Eingang MADI 6 fehlt".
+ * Die Stimmanzeige der Taste: Note in klarer Schrift mit Cent-Balken und Lampe
+ * (renderTunerKey), höchstens alle 100 ms neu. Steinberg zeigt sie nur im Modus,
+ * außerhalb das gewohnte Bild mit Lampe und „Tuner" (renderToggleKey), klein „Tuner?",
+ * wenn der Tuner fehlt, „stumm", wenn seine Mute ohne Modus anliegt. Eigener Tuner ohne
+ * Eingang: Taste „Eingang?", Leiste „Eingang MADI 6 fehlt".
  *
  * Gesperrt ist nur das Einschalten der Steinberg-Quelle ohne Verbindung oder bei bit5 = 0
  * (Warnzeichen); Ausschalten geht immer. Der eigene Tuner braucht Nuendo nicht.
@@ -129,6 +136,20 @@ export class TunerAction extends SingletonAction<TunerSettings> {
 		session.onChange(() => {
 			for (const entry of this.entries.values()) entry.throttle.request();
 		});
+		session.onChainResult((result) => this.showChainResult(result.delay, result.amp));
+	}
+
+	/**
+	 * Kette (0x25): Warndreieck, wenn ein Slot nicht stimmt; Häkchen, wenn etwas geladen
+	 * wurde; nichts, wenn beides schon da war.
+	 */
+	private showChainResult(delay: number, amp: number): void {
+		const failed = delay > CHAIN_LOADED || amp > CHAIN_LOADED;
+		const loaded = delay === CHAIN_LOADED || amp === CHAIN_LOADED;
+		for (const entry of this.entries.values()) {
+			if (failed) void entry.key.showAlert();
+			else if (loaded) void entry.key.showOk();
+		}
 	}
 
 	override onWillAppear(ev: WillAppearEvent<TunerSettings>): void {
@@ -143,11 +164,13 @@ export class TunerAction extends SingletonAction<TunerSettings> {
 		};
 		this.entries.set(id, entry);
 		this.session.configureTuner(tunerSettingsOf(entry.settings));
+		this.session.setTunerKeyVisible(true);
 		entry.throttle.request();
 	}
 
 	override onWillDisappear(ev: WillDisappearEvent<TunerSettings>): void {
 		this.forget(ev.action.id);
+		this.session.setTunerKeyVisible(this.entries.size > 0);
 	}
 
 	/** Quelle, Eingang, Mute und Kammerton gelten sofort; neu zeichnen (Rahmenfarbe). */
@@ -237,8 +260,9 @@ export class TunerAction extends SingletonAction<TunerSettings> {
 		try {
 			const tuner = this.session.tuner();
 			const red = muteArmed(entry.settings);
-			if (tuner.active) {
-				image = renderTunerKey(tuner.reading, tuner.keyStatus, red);
+			// Eigener Tuner: Stimmanzeige immer; Steinberg liefert Messwerte nur im Modus.
+			if (tuner.active || this.session.store.tunerSource === "own") {
+				image = renderTunerKey(tuner.reading, tuner.keyStatus, red, tuner.active);
 			} else {
 				const view = this.session.toggleView("tuner");
 				image = renderToggleKey("tuner", view.on, view.status, red);

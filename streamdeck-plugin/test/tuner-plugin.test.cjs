@@ -110,6 +110,8 @@ const N = {
 const OWN = { source: "own", muteChannel: true, input: { device: "MADI (5+6)", channel: 1 }, a4: 440 };
 const MUTE_ON = "92 00 7F";
 const MUTE_OFF = "92 00 00";
+/** Kette sicherstellen (Protokoll 5): geht beim Verlassen des Modus mit, wenn Verbindung und bit5 da sind. */
+const CHAIN = "F0 7D 14 F7";
 
 /** Session mit Uhr von Hand, Port-Attrappe und Merker-Protokoll. */
 function env(tuner = OWN, sessionOptions = {}) {
@@ -356,7 +358,7 @@ module.exports = async function run() {
 		check("Eingang fehlt: Leiste und Taste verschieden", [status(v.status), status(v.keyStatus)], ["Eingang MADI 6 fehlt", "Eingang?"]);
 		e.feed([N.tuner(0x08, -49, 0, "--")]);
 		check("0x24 der Abfrage ändert den Modus des Decks nicht", e.s.tunerActive(), true);
-		check("zweiter Druck: Note 0 Vel 0, Kindprozess gestoppt, Merker weg", [e.press(), e.port.stops, e.s.store.channelMuted, e.markers], [[MUTE_OFF], 1, false, [true, false]]);
+		check("zweiter Druck: Note 0 Vel 0, Kindprozess gestoppt, Merker weg", [e.press(), e.port.stops, e.s.store.channelMuted, e.markers], [[MUTE_OFF, CHAIN], 1, false, [true, false]]);
 		e.port.emit({ type: "reading", reading: { note: "A", octave: 2, cents: 0, state: "tracking", level: -40, t: 2 } });
 		e.flush();
 		check("Nachzügler nach dem Stopp: kein Einfluss", e.s.tuner().active, false);
@@ -372,12 +374,12 @@ module.exports = async function run() {
 		e.feed([N.flags(0x65)]);
 		check("0x22 bestätigt: nichts weiter", e.since(i), [MUTE_ON]);
 		e.press();
-		check("aus: Mute aufgehoben", e.since(i), [MUTE_ON, MUTE_OFF]);
+		check("aus: Mute aufgehoben, Kette", e.since(i), [MUTE_ON, MUTE_OFF, CHAIN]);
 	}
 	{
 		const e = connected(0x65); // Input 6 schon stumm (etwa: Projekt mit laufendem Tuner gespeichert)
 		check("Input 6 schon stumm: Einschalten sendet nichts, kein Merker", [e.press(), e.s.store.channelMuted], [[], false]);
-		check("Ausschalten entmutet IMMER, auch eine Mute, die die Taste nicht gesetzt hat", e.press(), [MUTE_OFF]);
+		check("Ausschalten entmutet IMMER, auch eine Mute, die die Taste nicht gesetzt hat", e.press(), [MUTE_OFF, CHAIN]);
 	}
 	{
 		const e = connected(0x64); // Input 6 nicht stumm
@@ -389,13 +391,13 @@ module.exports = async function run() {
 		check("an, aus, an: wieder gemutet", e.since(n).includes(MUTE_ON), true);
 		const m = e.sent.length;
 		e.press();
-		check("aus: entmutet", e.since(m), [MUTE_OFF]);
+		check("aus: entmutet", e.since(m), [MUTE_OFF, CHAIN]);
 	}
 	{
 		// Ohne Option fasst die Taste den Mute nie an, auch beim Ausschalten nicht.
 		const e = connected(0x65);
 		e.s.store.muteChannel = false;
-		check("Option aus, Input 6 stumm: an und aus senden keine Note", [e.press(), e.press()], [[], []]);
+		check("Option aus, Input 6 stumm: an und aus senden keine Note (aus nur die Kette)", [e.press(), e.press()], [[], [CHAIN]]);
 	}
 	{
 		const e = connected(0x44); // bit5 = 0: Platz 6 heißt anders
@@ -403,11 +405,11 @@ module.exports = async function run() {
 		const i = e.sent.length;
 		e.feed([N.flags(0x64)]);
 		check("bit5 wieder da, noch im Modus: Mute nachgeholt (dazu die Abfrage wegen bit5)", e.since(i), [MUTE_ON, "F0 7D 10 F7"]);
-		check("aus", e.press(), [MUTE_OFF]);
+		check("aus", e.press(), [MUTE_OFF, CHAIN]);
 	}
 	{
 		const e = connected(0x64, { ...OWN, muteChannel: false });
-		check("ohne „Input 6 stummschalten“: keine Note", [e.press(), e.press()], [[], []]);
+		check("ohne „Input 6 stummschalten“: keine Note (aus nur die Kette)", [e.press(), e.press()], [[], [CHAIN]]);
 		const f = connected(0x64);
 		f.press();
 		const i = f.sent.length;
@@ -418,12 +420,12 @@ module.exports = async function run() {
 		f.s.configureTuner(OWN);
 		f.flush();
 		check("Haken im Modus wieder gesetzt: jetzt stumm", f.since(j), [MUTE_ON]);
-		check("aus: aufgehoben", f.press(), [MUTE_OFF]);
+		check("aus: aufgehoben", f.press(), [MUTE_OFF, CHAIN]);
 	}
 	{
 		// Schnell an und aus, bevor das 0x22 die Mute bestätigt
 		const e = connected(0x64);
-		check("an und sofort aus (0x22 noch alt): trotzdem aufgehoben", [e.press(), e.press()], [[MUTE_ON], [MUTE_OFF]]);
+		check("an und sofort aus (0x22 noch alt): trotzdem aufgehoben", [e.press(), e.press()], [[MUTE_ON], [MUTE_OFF, CHAIN]]);
 	}
 
 	//==========================================================================
@@ -467,7 +469,7 @@ module.exports = async function run() {
 		const g = connected(0x64);
 		g.press();
 		g.s.restoreChannelMute(true); // spätes Laden: in diesem Lauf schon selbst gemutet
-		check("Merker zählt nicht, wenn die Taste in diesem Lauf schon gemutet hat", g.press(), [MUTE_OFF]);
+		check("Merker zählt nicht, wenn die Taste in diesem Lauf schon gemutet hat", g.press(), [MUTE_OFF, CHAIN]);
 	}
 
 	//==========================================================================
@@ -496,6 +498,87 @@ module.exports = async function run() {
 		e.feed([N.tuner(0x1c, 0, 0, "--")]);
 		check("Steinbergs Modus an (beim eigenen Tuner): das ist schon derselbe Zustand, keine Schleife", e.since(m), []);
 		check("Taste außerhalb des Modus beim eigenen: kein Hinweis", status(e.s.toggleView("tuner").status), "ok");
+	}
+
+	//==========================================================================
+	section("Kette (Protokoll 5): Delay und TONE3000 beim Verlassen des Modus sicherstellen");
+	{
+		check("0x14 kodieren", hex(P.buildChain()), CHAIN);
+		check("0x25 lesen", P.parseFrame([0xf0, 0x7d, 0x25, 1, 0, 0xf7]), { type: "chain", delay: 1, amp: 0 });
+		check("0x25 kaputt: falsche Länge, Code über 7", [P.parseFrame([0xf0, 0x7d, 0x25, 1, 0xf7]), P.parseFrame([0xf0, 0x7d, 0x25, 1, 0, 0, 0xf7]), P.parseFrame([0xf0, 0x7d, 0x25, 8, 0, 0xf7])], [null, null, null]);
+		check("Log: beide Richtungen", [P.describeMessage(P.buildChain()), P.describeMessage([0xf0, 0x7d, 0x25, 1, 2, 0xf7])], ["KETTE", "KETTE Delay geladen, TONE3000 nicht in der Plugin-Liste"]);
+
+		const saved = [];
+		const results = [];
+		const e = env(OWN, { onLastPreset: (name) => saved.push(name) });
+		e.s.onChainResult((r) => results.push(r));
+		e.step(0);
+		e.feed([N.flags(0x64)]);
+		const preset = (name) => [0xf0, 0x7d, 0x21, ...P.encodeText(name), 0xf7];
+		const chain = (d, a) => [0xf0, 0x7d, 0x25, d, a, 0xf7];
+		e.feed([preset("HMT"), preset("HMT")]);
+		check("0x21: zuletzt aktives Preset gemerkt und einmal gemeldet", [e.s.store.lastPreset, saved], ["HMT", ["HMT"]]);
+		check("Modus an: keine Kette", e.press(), [MUTE_ON]);
+		check("Modus aus: Mute auf, dann die Kette", e.press(), [MUTE_OFF, CHAIN]);
+		e.step(1000);
+		e.feed([preset("Calfinornia")]);
+		check("frisches TONE3000 meldet Programm 0 vor dem 0x25: nicht gemerkt", [e.s.store.lastPreset, saved], ["HMT", ["HMT"]]);
+		let i = e.sent.length;
+		e.feed([chain(1, 1)]);
+		check("0x25 geladen/geladen: zuletzt aktives Preset zurückholen, dann abfragen", e.since(i), ["F0 7D 12 " + hex(P.encodeText("HMT")) + " F7", "F0 7D 10 F7"]);
+		check("Ergebnis an die Tuner-Taste", results, [{ type: "chain", delay: 1, amp: 1 }]);
+		e.step(2000);
+		e.feed([preset("Calfinornia")]);
+		check("späte Meldung des frischen Plugins (binnen 3 s): nicht gemerkt", e.s.store.lastPreset, "HMT");
+		e.feed([preset("HMT")]);
+		e.step(4500);
+		e.feed([preset("Kalt")]);
+		check("nach der Sperre zählt jedes 0x21 wieder", [e.s.store.lastPreset, saved], ["Kalt", ["HMT", "Kalt"]]);
+
+		e.press();
+		e.press();
+		e.step(5000);
+		i = e.sent.length;
+		e.feed([chain(0, 0)]);
+		check("0x25 war da/war da: kein 0x12, nur abfragen", e.since(i), ["F0 7D 10 F7"]);
+		e.feed([preset("Clean")]);
+		check("Sperre endet mit dem 0x25", e.s.store.lastPreset, "Clean");
+
+		e.press();
+		e.press();
+		e.step(6000);
+		e.feed([preset("Calfinornia")]);
+		check("kein 0x25 (Script ohne Protokoll 5): gesperrt …", e.s.store.lastPreset, "Clean");
+		e.step(6000 + 15100);
+		e.feed([preset("Calfinornia")]);
+		check("… aber höchstens 15 s", e.s.store.lastPreset, "Calfinornia");
+
+		const f = env(OWN);
+		check("ohne Verbindung: Modus an und aus ohne Kette", [f.press(), f.press()], [[], []]);
+		const g = connected(0x44);
+		check("bit5 = 0 (Deck-Kanal heißt anders): keine Kette", [g.press(), g.press()], [[], []]);
+		const h = connected(0x64, { ...OWN, source: "steinberg" });
+		h.press();
+		check("Steinberg-Quelle: 0x13 00, dann die Kette", h.press(), ["F0 7D 13 00 F7", CHAIN]);
+
+		const r = env(OWN);
+		r.s.restoreLastPreset("Plexi");
+		r.step(0);
+		r.feed([N.flags(0x64)]);
+		r.press();
+		r.press();
+		i = r.sent.length;
+		r.feed([chain(1, 1)]);
+		check("Preset aus den globalen Einstellungen: nach dem Neustart zurückgeholt", r.since(i)[0], "F0 7D 12 " + hex(P.encodeText("Plexi")) + " F7");
+		const q = connected(0x64);
+		q.press();
+		q.press();
+		i = q.sent.length;
+		q.feed([chain(1, 1)]);
+		check("nie ein Preset bekannt: kein 0x12", q.since(i), ["F0 7D 10 F7"]);
+		i = r.sent.length;
+		r.feed([chain(2, 1)]);
+		check("0x25 ohne vorheriges 0x14: kein Preset zurückholen (Auftrag schon beantwortet)", r.since(i).filter((x) => x.startsWith("F0 7D 12")), []);
 	}
 
 	//==========================================================================
@@ -568,9 +651,13 @@ module.exports = async function run() {
 			check("muteArmed: Vorgabe an, Haken aus, Steinberg-Quelle nie", [A.muteArmed({}), A.muteArmed({ muteChannel: false }), A.muteArmed({ source: "steinberg" })], [true, false, false]);
 
 			act.onWillAppear({ action: lk, payload: { settings: {} } });
+			g.port.emit({ type: "status", status: { kind: "running", rate: 48000 } });
+			g.port.emit({ type: "reading", reading: { note: "--", octave: 0, cents: 0, state: "silent", level: -100, t: 1 } });
+			g.flush();
+			const quiet = { note: "--", octave: 0, cent: 0, locked: false, inTune: false, found: true, held: false };
 			await sleep(A.TUNER_KEY_INTERVAL_MS + 40);
-			check("Vorgabe (Stummschaltung an): roter Rahmen", shown() === render.renderToggleKey("tuner", false, OKS, true), true);
-			ok("roter und goldener Rahmen sind verschieden", render.renderToggleKey("tuner", false, OKS, true) !== render.renderToggleKey("tuner", false, OKS, false));
+			check("Vorgabe (Stummschaltung an): roter Rahmen", shown() === render.renderTunerKey(quiet, OKS, true, false), true);
+			ok("roter und goldener Rahmen sind verschieden", render.renderTunerKey(quiet, OKS, true, false) !== render.renderTunerKey(quiet, OKS, false, false));
 
 			const n0 = g.sent.length;
 			act.onKeyDown({ action: lk, payload: { settings: {} } });
@@ -582,7 +669,7 @@ module.exports = async function run() {
 			g.flush();
 			check("Loslassen nach langem Druck: Tuner bleibt aus, keine Note", [g.s.tunerActive(), notes(n0)], [false, []]);
 			await sleep(A.TUNER_KEY_INTERVAL_MS + 40);
-			check("jetzt goldener Rahmen", shown() === render.renderToggleKey("tuner", false, OKS, false), true);
+			check("jetzt goldener Rahmen", shown() === render.renderTunerKey(quiet, OKS, false, false), true);
 
 			const off = { muteChannel: false };
 			const n1 = g.sent.length;
@@ -612,6 +699,100 @@ module.exports = async function run() {
 			act.onWillDisappear({ action: lk });
 			await sleep(A.LONG_PRESS_MS + 60);
 			check("Taste verschwindet während des Haltens: kein langer Druck mehr", saved.length, 2);
+		}
+
+		// Die Taste stimmt immer mit; der kurze Druck schaltet nur die große Anzeige in der
+		// Leiste und die Mute (Wunsch des Users 2026-10-07).
+		{
+			const g = connected(0x64);
+			const act = new A.TunerAction(g.s, async () => []);
+			const mk = (id) => {
+				const k = { id, images: [], alerts: 0, isKey: () => true, isDial: () => false, setImage: async (img) => k.images.push(img), showAlert: async () => k.alerts++, setSettings: async () => undefined };
+				return k;
+			};
+			const k1 = mk("a1");
+			const k2 = mk("a2");
+			const OKS = { kind: "ok" };
+			const shown = (k) => k.images[k.images.length - 1];
+			const tap = (k, settings = {}) => {
+				act.onKeyDown({ action: k, payload: { settings } });
+				act.onKeyUp({ action: k, payload: { settings } });
+				g.flush();
+			};
+			check("vor der Taste: kein Kindprozess", g.port.starts.length, 0);
+			act.onWillAppear({ action: k1, payload: { settings: {} } });
+			g.flush();
+			check("Taste erscheint: Kindprozess läuft, Modus aus", [g.port.starts, g.s.tunerActive()], [[{ device: "MADI (5+6)", channel: 1, a4: 440 }], false]);
+			await sleep(A.TUNER_KEY_INTERVAL_MS + 40);
+			check("vor der ersten Meldung: Taste „Warte…“, schlichter roter Rahmen", shown(k1) === render.renderTunerKey(null, { kind: "waiting" }, true, false), true);
+
+			g.port.emit({ type: "status", status: { kind: "running", rate: 48000 } });
+			g.port.emit({ type: "reading", reading: { note: "E", octave: 2, cents: -16.2, state: "tracking", level: -40, t: 1 } });
+			g.flush();
+			const e16 = { note: "E", octave: 2, cent: -16, locked: true, inTune: false, found: true, held: false };
+			await sleep(A.TUNER_KEY_INTERVAL_MS + 40);
+			check("ohne Modus: Taste zeigt E2 -16, schlichter Rahmen; Leiste bleibt bei den Reglern", [shown(k1) === render.renderTunerKey(e16, OKS, true, false), g.s.tunerActive()], [true, false]);
+			ok("schlichter und heller Rahmen sind verschieden", render.renderTunerKey(e16, OKS, true, false) !== render.renderTunerKey(e16, OKS, true, true));
+
+			const n1 = g.sent.length;
+			tap(k1);
+			await sleep(A.TUNER_KEY_INTERVAL_MS + 40);
+			check("kurzer Druck: große Anzeige an, Input 6 stumm, Messung bleibt, kein Stopp", [g.s.tunerActive(), g.sent.slice(n1).filter((b) => b[0] === 0x92).map(hex), g.s.tuner().reading, g.port.stops], [true, [MUTE_ON], e16, 0]);
+			check("im Modus: heller roter Rahmen", shown(k1) === render.renderTunerKey(e16, OKS, true, true), true);
+
+			const n2 = g.sent.length;
+			tap(k1);
+			await sleep(A.TUNER_KEY_INTERVAL_MS + 40);
+			check("zweiter kurzer Druck: Anzeige aus, Input 6 offen, Tuner misst weiter", [g.s.tunerActive(), g.sent.slice(n2).filter((b) => b[0] === 0x92).map(hex), g.port.stops, shown(k1) === render.renderTunerKey(e16, OKS, true, false)], [false, [MUTE_OFF], 0, true]);
+
+			act.onWillAppear({ action: k2, payload: { settings: {} } });
+			act.onWillDisappear({ action: k1 });
+			check("eine von zwei Tasten verschwindet: läuft weiter", g.port.stops, 0);
+			act.onWillDisappear({ action: k2 });
+			check("letzte Taste weg, Modus aus: Kindprozess gestoppt", g.port.stops, 1);
+
+			const s0 = g.port.starts.length;
+			tap(k1); // Druck ohne sichtbare Taste (Stream Deck stellt ihn trotzdem zu)
+			check("Modus ohne Taste: läuft wieder (frisch, „Warte…“)", [g.s.tunerActive(), g.port.starts.length > s0, g.s.tuner().reading], [true, true, null]);
+			act.onWillAppear({ action: k1, payload: { settings: {} } });
+			tap(k1);
+			check("Taste wieder da, Modus aus: läuft weiter", [g.s.tunerActive(), g.port.stops], [false, 1]);
+			act.onWillDisappear({ action: k1 });
+
+			const h = connected(0x64);
+			const sb = new A.TunerAction(h.s, async () => []);
+			const k3 = mk("s1");
+			sb.onWillAppear({ action: k3, payload: { settings: { source: "steinberg" } } });
+			h.flush();
+			await sleep(A.TUNER_KEY_INTERVAL_MS + 40);
+			check("Steinberg-Quelle: kein Kindprozess, Taste wie bisher (Messwerte nur im Modus)", [h.port.starts.length, shown(k3) === render.renderToggleKey("tuner", false, OKS, false)], [0, true]);
+			sb.onDidReceiveSettings({ action: k3, payload: { settings: {} } });
+			h.flush();
+			check("Wechsel zum eigenen Tuner bei sichtbarer Taste: startet", h.port.starts.length, 1);
+			sb.onDidReceiveSettings({ action: k3, payload: { settings: { source: "steinberg" } } });
+			h.flush();
+			check("zurück zu Steinberg: gestoppt", h.port.stops, 1);
+			sb.onWillDisappear({ action: k3 });
+		}
+
+		// Kette: Häkchen, wenn etwas geladen wurde, Warndreieck, wenn ein Slot nicht stimmt.
+		{
+			const g = connected(0x64);
+			const act = new A.TunerAction(g.s, async () => []);
+			const k = { id: "c1", images: [], alerts: 0, oks: 0, isKey: () => true, isDial: () => false, setImage: async () => undefined, showAlert: async () => k.alerts++, showOk: async () => k.oks++, setSettings: async () => undefined };
+			act.onWillAppear({ action: k, payload: { settings: {} } });
+			g.flush();
+			const result = (d, a) => {
+				g.feed([[0xf0, 0x7d, 0x25, d, a, 0xf7]]);
+				return [k.oks, k.alerts];
+			};
+			check("beide waren da: weder Häkchen noch Warndreieck", result(0, 0), [0, 0]);
+			check("eins geladen: Häkchen", result(1, 0), [1, 0]);
+			check("eins nicht in der Plugin-Liste: Warndreieck", result(0, 2), [1, 1]);
+			check("geladen, aber Bypass nicht übernommen: Warndreieck", result(5, 1), [1, 2]);
+			check("Kanal fehlt: Warndreieck", result(6, 6), [1, 3]);
+			act.onWillDisappear({ action: k });
+			check("ohne Taste: nichts", result(1, 1), [1, 3]);
 		}
 
 		// Bilder: gehalten und Eingang fehlt (zum Ansehen in test-output)

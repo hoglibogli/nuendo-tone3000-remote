@@ -300,7 +300,7 @@ module.exports = async function run() {
 
 	n1 = sent.length;
 	tap(tuner, { action: kt, payload: { settings: { ...SB, openWindow: true } } });
-	check("mit openWindow aus: 0x13 00 und Note 1 Vel 0", sent.slice(n1).map(hex), ["F0 7D 13 00 F7", "92 01 00"]);
+	check("mit openWindow aus: 0x13 00 und Note 1 Vel 0, dann die Kette", sent.slice(n1).map(hex), ["F0 7D 13 00 F7", "92 01 00", "F0 7D 14 F7"]);
 	flush();
 	await sleep(DISPLAY_INTERVAL_MS + 20);
 	check("Modus aus: Regler-Bilder sofort zurück", strip.map((d, i) => lastCanvas(d) === render.renderDial(P.PARAM_NAMES[i], s.knob(i).value01, s.knob(i).status)), [true, true, true, true]);
@@ -311,7 +311,7 @@ module.exports = async function run() {
 	tap(tuner, { action: kt, payload: { settings: { ...SB, openWindow: true } } });
 	check("mit openWindow an: 0x13 01 und Note 1 Vel 127", sent.slice(n1).map(hex), ["F0 7D 13 01 F7", "92 01 7F"]);
 	tap(tuner, { action: kt, payload: { settings: { ...SB, openWindow: "ja" } } });
-	check("openWindow nur bei echtem true", sent.slice(n1 + 2).map(hex), ["F0 7D 13 00 F7"]);
+	check("openWindow nur bei echtem true", sent.slice(n1 + 2).map(hex), ["F0 7D 13 00 F7", "F0 7D 14 F7"]);
 	// Modus aus, aber die Mute des Tuners steht an (etwa im Projekt gespeichert, 5.5)
 	n1 = sent.length;
 	feed([T(0x18, -49, 0, "--")]);

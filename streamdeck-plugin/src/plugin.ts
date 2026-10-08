@@ -81,27 +81,30 @@ const tunerSource = new TunerSource({ spawn: spawnTunerWorker, log: (line) => st
 
 /** Globale Einstellung: Die Tuner-Taste hat Input 6 stummgeschaltet (überlebt den Neustart). */
 const MUTE_MARKER = "tunerChannelMuted";
+/** Globale Einstellung: zuletzt aktives TONE3000-Preset (Kette: nach frischem Laden zurückholen). */
+const LAST_PRESET = "lastPreset";
 
-async function saveMuteMarker(on: boolean): Promise<void> {
+/** Einen Schlüssel der globalen Einstellungen schreiben, die übrigen bleiben. */
+async function saveGlobal(key: string, value: boolean | string): Promise<void> {
 	try {
 		const current = await streamDeck.settings.getGlobalSettings();
-		await streamDeck.settings.setGlobalSettings({ ...current, [MUTE_MARKER]: on });
+		await streamDeck.settings.setGlobalSettings({ ...current, [key]: value });
 	} catch (e) {
 		crashLog("setGlobalSettings", e);
 	}
 }
 
-/** Merker lesen; bleibt die Antwort aus, gilt er als nicht gesetzt. */
-async function loadMuteMarker(): Promise<boolean> {
+/** Globale Einstellungen lesen; bleibt die Antwort aus, gilt nichts als gesetzt. */
+async function loadGlobals(): Promise<Record<string, unknown>> {
 	try {
 		const settings = await Promise.race([
 			streamDeck.settings.getGlobalSettings(),
 			new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
 		]);
-		return settings !== null && (settings as Record<string, unknown>)[MUTE_MARKER] === true;
+		return (settings as Record<string, unknown> | null) ?? {};
 	} catch (e) {
 		crashLog("getGlobalSettings", e);
-		return false;
+		return {};
 	}
 }
 
@@ -111,7 +114,8 @@ const session = new Session({
 	},
 	log: (line) => streamDeck.logger.info(line),
 	ownTuner: tunerSource,
-	onChannelMuteMarker: (on) => void saveMuteMarker(on),
+	onChannelMuteMarker: (on) => void saveGlobal(MUTE_MARKER, on),
+	onLastPreset: (name) => void saveGlobal(LAST_PRESET, name),
 });
 midi.addListener((message) => session.receive(message));
 
@@ -135,7 +139,9 @@ streamDeck
 	.then(async () => {
 		crashLog("startup", "connected to Stream Deck");
 		// Vor dem ersten 0x22: Hing eine Kanal-Mute der Tuner-Taste, hebt sie das 0x22 auf.
-		session.restoreChannelMute(await loadMuteMarker());
+		const globals = await loadGlobals();
+		session.restoreChannelMute(globals[MUTE_MARKER] === true);
+		session.restoreLastPreset(typeof globals[LAST_PRESET] === "string" ? (globals[LAST_PRESET] as string) : null);
 		midi.maintain();
 		session.start();
 		setInterval(maintainPorts, PORT_CHECK_MS);

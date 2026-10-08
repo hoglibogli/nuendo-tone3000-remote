@@ -1,10 +1,13 @@
 import {
+	buildChain,
 	buildNote,
 	buildSelectPreset,
 	buildSetParam,
 	buildTunerMode,
 	CENT_MAX,
 	CENT_MIN,
+	CHAIN_LOADED,
+	ChainFrame,
 	FLAG_AMP_OPEN,
 	FLAG_CHANNEL_OK,
 	FLAG_DELAY_BYPASS,
@@ -68,7 +71,9 @@ import type { OwnTunerState } from "../tuner/wire";
  *
  *   own        Eigener Tuner (Vorgabe): Der Modus gehört allein dem Deck; das Plugin
  *              misst selbst (Audio-Kindprozess, tuner/source.ts), die Session reicht die
- *              Messungen herein (own, ownStatus). Ans Script geht kein 0x13 01; sein
+ *              Messungen herein (own, ownStatus) — auch außerhalb des Modus, die Taste
+ *              zeigt sie immer; der Modus schaltet nur die große Anzeige in der Leiste
+ *              und die Kanal-Mute. Ans Script geht kein 0x13 01; sein
  *              Tuner-Modus soll aus sein — beim Verbinden 0x13 00 wie bisher, und meldet
  *              ein 0x24 doch Modus oder Tuner-Mute, einmal 0x13 00 (Flanke).
  *              Kanal-Mute „wie vorher" (muteChannel, Vorgabe an): beim Einschalten Note 0
@@ -205,7 +210,20 @@ export interface ApplyResult {
 	releaseTuner?: boolean;
 	/** Noten der Kanal-Mute, nachgeholt mit diesem 0x22 (eigener Tuner). Fehlt = keine. */
 	send?: number[][];
+	/** 0x25: Ergebnis der Kette (Protokoll 5), für Log und Tuner-Taste. Fehlt = kein 0x25. */
+	chain?: ChainFrame;
+	/** 0x12 mit dem zuletzt aktiven Preset nach einem frisch geladenen TONE3000. Fehlt = keins. */
+	selectPreset?: number[];
 }
+
+/**
+ * Kette (Protokoll 5): So lange nach dem 0x14 gilt ein 0x21 nicht als „zuletzt aktives
+ * Preset" — ein frisch geladenes TONE3000 meldet sein Programm 0. Kommt kein 0x25 (ein
+ * Script ohne Protokoll 5), endet die Sperre so.
+ */
+export const CHAIN_AWAIT_MS = 15000;
+/** Nach einem 0x25 mit frisch geladenem TONE3000 noch so lange (späte Callbacks). */
+export const PRESET_GUARD_MS = 3000;
 
 const NOTHING: ApplyResult = Object.freeze({ changed: false, queryNow: false });
 
@@ -252,6 +270,17 @@ export class Store {
 	flags: number | null = null;
 	/** Aktives Preset aus 0x21; null = unbekannt (leeres 0x21, bit6 = 0). */
 	preset: string | null = null;
+	/**
+	 * Zuletzt aktives Preset (Kette): Die Session hält es in den globalen Einstellungen
+	 * fest; nach dem Laden eines frischen TONE3000 wird es zurückgeholt. null = nie bekannt.
+	 */
+	lastPreset: string | null = null;
+	/** Das mit dem letzten 0x14 zurückzuholende Preset (Stand beim Senden). */
+	private chainRestore: string | null = null;
+	/** 0x14 gesendet, 0x25 steht aus: Nur das erste 0x25 danach holt das Preset zurück. */
+	private chainPending = false;
+	/** Bis hierhin zählt ein 0x21 nicht als „zuletzt aktiv" (Kette). */
+	private presetGuardUntil = -Infinity;
 	/** Plugin-Namen der Slots 1–3 aus 0x23; "" = leerer Slot, null = unbekannt. */
 	readonly slots: (string | null)[] = Array.from({ length: SLOT_COUNT }, () => null);
 	readonly knobs: KnobState[] = Array.from({ length: PARAM_COUNT }, unknownKnob);
@@ -372,6 +401,15 @@ export class Store {
 		return send ? [buildNote(NOTE_MUTE, false)] : [];
 	}
 
+	/** Eigener Tuner frisch gestartet: keine Messung, „Warte…"; true bei Änderung. */
+	resetOwn(): boolean {
+		if (this.own === null && this.ownStatus === WAITING && this.ownKeyStatus === WAITING) return false;
+		this.own = null;
+		this.ownStatus = WAITING;
+		this.ownKeyStatus = WAITING;
+		return true;
+	}
+
 	/** Eigener Tuner: neue Messung; true, wenn sich die Anzeige ändert. */
 	setOwnReading(state: OwnTunerState): boolean {
 		const o = this.own;
@@ -398,10 +436,15 @@ export class Store {
 				return this.applyParam(frame.p, frame.value, frame.text, now);
 			case "preset": {
 				const name = frame.name === "" ? null : frame.name;
+				// Zuletzt aktives Preset merken (Kette); nicht, was ein frisch geladenes
+				// TONE3000 von sich aus meldet — außer es ist das zurückgeholte.
+				if (name !== null && (now >= this.presetGuardUntil || name === this.chainRestore)) this.lastPreset = name;
 				if (name === this.preset) return NOTHING;
 				this.preset = name;
 				return { changed: true, queryNow: false };
 			}
+			case "chain":
+				return this.applyChain(frame, now);
 			case "flags":
 				return this.applyFlags(frame.flags);
 			case "slot": {
@@ -415,6 +458,21 @@ export class Store {
 			case "tuner":
 				return this.applyTuner(readingOf(frame));
 		}
+	}
+
+	/**
+	 * 0x25: Ergebnis der Kette. Wurde TONE3000 frisch geladen, das zuletzt aktive Preset
+	 * zurückholen (0x12) und die Sperre für „zuletzt aktiv" noch kurz halten; sonst endet
+	 * sie hier. Danach abfragen: Slotnamen, bit6 und das Delay haben sich womöglich geändert.
+	 */
+	private applyChain(frame: ChainFrame, now: number): ApplyResult {
+		const restore = this.chainPending ? this.chainRestore : null;
+		this.chainPending = false;
+		const amp = frame.amp === CHAIN_LOADED;
+		this.presetGuardUntil = amp ? now + PRESET_GUARD_MS : now;
+		const selectPreset = amp && restore !== null && presetNameFits(restore) ? buildSelectPreset(restore) : undefined;
+		if (!amp) this.chainRestore = null;
+		return { changed: false, queryNow: true, selectPreset, chain: frame };
 	}
 
 	/**
@@ -661,9 +719,9 @@ export class Store {
 	}
 
 	/**
-	 * Tuner-Taste, eigener Tuner: Modus um, ohne 0x13 und ohne Verbindung möglich (gemessen
-	 * wird im Plugin). Dazu die Kanal-Mute nach channelMuteStep. Steinberg-Quelle: siehe
-	 * unten (pressSteinberg).
+	 * Tuner-Taste, eigener Tuner: Modus um (große Anzeige in der Leiste), ohne 0x13 und ohne
+	 * Verbindung möglich (gemessen wird im Plugin). Dazu die Kanal-Mute nach
+	 * channelMuteStep. Steinberg-Quelle: siehe unten (pressSteinberg).
 	 *
 	 * Steinberg-Quelle (Protokoll 4): schaltet den Tuner-Modus um, 0x13 mit dem Gegenteil des
 	 * angezeigten Modus. Das Stummschalten erledigt das Script über „Mute" des Tuners;
@@ -677,20 +735,33 @@ export class Store {
 	 * openWindow (Setting der Taste): dazu Note 1 = Tuner-Fenster auf bzw. zu — nur mit
 	 * bit5, denn die Note wirkt ohne Titelprüfung auf den Deck-Kanal (4.1).
 	 */
-	pressTuner(openWindow: boolean): number[][] | null {
+	pressTuner(openWindow: boolean, now = 0): number[][] | null {
+		let out: number[][] | null;
 		if (this.tunerSource === "own") {
 			this.tunerMode = !this.tunerMode;
 			this.pendingMute = this.tunerMode && this.muteChannel;
 			// Ausschalten: Input 6 immer entmuten (nur mit der Option, sonst fasst die Taste den Mute nie an).
 			this.pendingUnmute = !this.tunerMode && this.muteChannel;
-			if (this.tunerMode) {
-				this.own = null;
-				this.ownStatus = WAITING;
-				this.ownKeyStatus = WAITING;
-			}
-			return this.channelMuteStep();
+			// Die Messung bleibt: Der Tuner läuft schon, solange die Taste da ist (Session).
+			out = this.channelMuteStep();
+		} else {
+			out = this.pressSteinberg(openWindow);
 		}
-		return this.pressSteinberg(openWindow);
+		if (out !== null && !this.tunerMode) out.push(...this.chainStep(now));
+		return out;
+	}
+
+	/**
+	 * Tuner-Modus verlassen: Kette sicherstellen (0x14, Wunsch des Users 2026-10-08) —
+	 * nur mit Verbindung und bit5, denn das Script lädt in den Deck-Kanal. Ohne beides
+	 * entfällt sie diesmal; beim nächsten Verlassen wieder.
+	 */
+	private chainStep(now: number): number[][] {
+		if (this.baseStatus().kind !== "ok") return [];
+		this.chainRestore = this.lastPreset;
+		this.chainPending = true;
+		this.presetGuardUntil = now + CHAIN_AWAIT_MS;
+		return [buildChain()];
 	}
 
 	private pressSteinberg(openWindow: boolean): number[][] | null {

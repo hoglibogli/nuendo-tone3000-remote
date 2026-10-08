@@ -1,17 +1,19 @@
 # Protokoll Stream Deck ↔ Nuendo (TONE3000 Remote)
 
-Stand: **Protokoll 4**, 2026-10-02; seit 2026-10-06 folgt der Betrieb dem Kanal
+Stand: **Protokoll 5**, 2026-10-08 (Kette); seit 2026-10-06 folgt der Betrieb dem Kanal
 „Mono In 6" über seinen Namen statt über Platz 6 ([4.7](#47-deck-kanal-folgt-dem-namen)),
 die Bytes sind dieselben. Gegenstück ist das Nuendo-Script
-`nuendo-script/Vincent_Tone3000.js` (`PROTOCOL_VERSION = 4`). Das Stream-Deck-Plugin
+`nuendo-script/Vincent_Tone3000.js` (`PROTOCOL_VERSION = 5`). Das Stream-Deck-Plugin
 wird gegen diese Datei gebaut; ändert sich das Script, ändert sich diese Datei mit.
-Die Beispielsitzung in [Abschnitt 8](#8-beispielsitzung) spielt `node test/script.test.cjs`
+Die Beispielsitzung in [Abschnitt 9](#9-beispielsitzung) spielt `node test/script.test.cjs`
 Byte für Byte gegen das Script nach.
 
 Protokoll 3 = Protokoll 2 (Suchlauf, unverändert) + Betrieb fürs Stream Deck. Protokoll 4
 = Protokoll 3 (unverändert) + Stimmanzeige ([Abschnitt 5](#5-stimmanzeige-protokoll-4)):
 `0x13` herein, `0x24` hinaus, und die Abfrage `0x10` endet mit einem `0x24`. Alles läuft
-über dasselbe Portpaar und dieselben Rahmen; die Typbytes überschneiden sich nicht.
+über dasselbe Portpaar und dieselben Rahmen; die Typbytes überschneiden sich nicht. Protokoll 5
+= Protokoll 4 (unverändert) + Kette ([Abschnitt 6](#6-kette-protokoll-5)): `0x14` herein, `0x25`
+hinaus.
 
 ## 1 Verbindung
 
@@ -110,12 +112,14 @@ am Loopback nicht erprobt; das Deck schickt keine.
 | `F0 7D 11 <p> <v1> <v0> F7` | → Nuendo | **TONE3000-Regler setzen** | 3 |
 | `F0 7D 12 <Name> F7` | → Nuendo | **Preset per Namen wählen** | 3 |
 | `F0 7D 13 <m> F7` | → Nuendo | **Tuner-Modus an/aus** | 4 |
+| `F0 7D 14 F7` | → Nuendo | **Kette sicherstellen** (Slot 2 Delay, Slot 3 TONE3000) | 5 |
 | `92 <n> <vel>` | → Nuendo | **Kanal 3: Taste n, Zielzustand** | 3 |
 | `F0 7D 20 <p> <v1> <v0> <Klartext> F7` | → Deck | **Reglerwert** | 3 |
 | `F0 7D 21 <Name> F7` | → Deck | **aktives Preset** | 3 |
 | `F0 7D 22 <flags> F7` | → Deck | **Zustände** | 3 |
 | `F0 7D 23 <s> <Name> F7` | → Deck | **Plugin-Name in Slot s** | 3 |
 | `F0 7D 24 <flags> <cent> <oct> <Note> F7` | → Deck | **Stimmanzeige** | 4 |
+| `F0 7D 25 <Delay> <TONE3000> F7` | → Deck | **Ergebnis der Kette** | 5 |
 | `F0 7D 7F <Text> F7` | → Deck | Debugzeile | 2 |
 
 ## 4 Betrieb (Protokoll 3)
@@ -727,7 +731,76 @@ hebt das Deck sie mit der nächsten Abfrage einmal wieder auf.
   das hebt seine Mute auch dort auf. Nach einem Neustart des Scripts kennt es ihn nicht mehr:
   Dann hilft nur der Slot 1.
 
-## 6 Suchlauf (Protokoll 2)
+## 6 Kette (Protokoll 5)
+
+Wunsch des Users 2026-10-08: Verlässt die Tuner-Taste den Tuner-Modus, sollen in Mono In 6
+**Slot 2 das H-Delay** und **Slot 3 TONE3000** stecken; fehlt eins, lädt das Script es.
+Der Weg ist bei der FaderBank am Gerät belegt (dort E-34/E-35):
+`mPluginManager.trySetSlotPlugin(mapping, slotID, uid, dontAskDiscard)` am DirectAccess-Objekt
+`Slot n` unter `Inserts`, synchron, rund 55–60 ms, ohne Plugin-Fenster.
+
+### 6.1 `F0 7D 14 F7` — Kette sicherstellen
+
+Das Deck schickt es bei jedem Verlassen des Tuner-Modus per Taste, gleich welche Quelle,
+nach dem Entmuten bzw. dem `0x13 00` — nur mit Verbindung und bit5 (das Script lädt in den
+Deck-Kanal); ohne beides entfällt es, beim nächsten Verlassen kommt es wieder. Nicht beim
+Verbindungsaufbau und nicht beim Wechsel der Quelle.
+
+Das Script merkt nur den Auftrag; ausgeführt wird er im Leerlauf (`page.mOnIdle`, dessen
+frisches `activeMapping`), **ein Slot je Durchgang** (höchstens alle 150 ms), und erst, wenn
+die Deck-Suche steht. Wartet sie länger als 10 s, verfällt der Auftrag (Code 6). Ein neues
+`0x14` ersetzt einen laufenden Auftrag (Debugzeile), es kommt also ein einziges `0x25`.
+
+Je Slot, Slot 2 zuerst:
+
+| Slot | steckt schon (Titel enthält, ohne Groß/klein) | sonst geladen aus Nuendos Plugin-Liste | danach |
+| --- | --- | --- | --- |
+| 2 | `h-delay` (auch H-Delay Stereo) | Name genau `H-Delay Mono`, Hersteller enthält `waves` | Bypass an |
+| 3 | `tone3000` | Name genau `TONE3000`, Hersteller enthält `tone3000` | Bypass aus |
+
+- **Was schon drinsteckt, bleibt unberührt** — auch seine Einstellungen.
+- **Ein anderes Plugin im Slot wird ersetzt, ohne Rückfrage** (`dontAskDiscard = true`, so
+  gewünscht). Ohne diesen Schalter fragte Nuendo in einem modalen Dialog.
+- Die UID kommt aus der aktiven, sonst der Standard-Sammlung (`mEntries`, 32 Hex-Zeichen) und
+  wird je Sitzung gemerkt.
+- Nach dem Laden setzt das Script am Slot `Edit` auf 0 (Sicherung; über die API öffnet
+  Nuendo kein Fenster) und `Bypass` wie in der Tabelle, und liest `Bypass` zurück. Ein
+  gemerktes TONE3000 gilt danach nicht mehr.
+- Ein frisch geladenes TONE3000 meldet über die Callbacks sein Programm 0 als aktives
+  Preset (`0x21`), oft noch vor dem `0x25`.
+
+### 6.2 `F0 7D 25 <Delay> <TONE3000> F7` — Ergebnis
+
+Ein Code je Slot:
+
+| Code | Bedeutung |
+| --- | --- |
+| 0 | steckte schon drin, nichts getan |
+| 1 | geladen, Bypass wie verlangt |
+| 2 | nicht in Nuendos Plugin-Liste (Name/Hersteller) |
+| 3 | `trySetSlotPlugin` lieferte false |
+| 4 | kein Objekt `Inserts` oder Slot fehlt |
+| 5 | geladen, aber Bypass nicht übernommen |
+| 6 | Deck-Kanal heißt nicht `Mono In 6`, oder der Auftrag ist verfallen |
+| 7 | Ausnahme des Hosts (Konsole) |
+
+Dazu die Debugzeile `KETTE: Delay <Text>, TONE3000 <Text>`. Slotnamen (`0x23`), Zustände
+(`0x22`, bit2 Delay-Bypass, bit6 TONE3000) und Werte melden die Callbacks wie sonst.
+
+### 6.3 Was das Deck damit tut
+
+- **Zuletzt aktives Preset:** Jedes `0x21` mit Namen gilt als zuletzt aktiv; das Plugin hält
+  es in den globalen Einstellungen fest (`lastPreset`, überlebt den Neustart). **Gesperrt**
+  vom `0x14` bis zum `0x25` (höchstens 15 s, falls ein Script ohne Protokoll 5 nie
+  antwortet) und, wenn TONE3000 frisch geladen wurde, noch 3 s danach — sonst würde das
+  Programm 0 des frischen Plugins gemerkt. Das zurückgeholte Preset zählt auch in der Sperre.
+- **Zurückholen:** Meldet das erste `0x25` nach einem `0x14` TONE3000 mit Code 1, schickt
+  das Deck `0x12` mit dem Preset, das beim Senden des `0x14` zuletzt aktiv war; danach eine
+  Abfrage `0x10`.
+- **Tuner-Taste:** Warndreieck, wenn ein Code über 1 liegt; Häkchen, wenn etwas geladen
+  wurde; nichts, wenn beides schon da war.
+
+## 7 Suchlauf (Protokoll 2)
 
 Bytes unverändert seit Protokoll 2; benutzt von `tools/suchlauf.cjs`. Nicht für das Deck.
 
@@ -758,7 +831,7 @@ Notennummer auf Kanal 2 folgt derselben Reihenfolge (0 next … 3 browser2).
 
 | Zeile | Bedeutung |
 | --- | --- |
-| `--- Suchlauf TONE3000 Remote, Protokoll 4, Ziel "<Titel>" ---` | erste Zeile jedes Suchlaufs; nennt die Protokollfassung, das Werkzeug verlangt mindestens 2 |
+| `--- Suchlauf TONE3000 Remote, Protokoll 5, Ziel "<Titel>" ---` | erste Zeile jedes Suchlaufs; nennt die Protokollfassung, das Werkzeug verlangt mindestens 2 |
 | `--- Suchlauf beendet ---` | letzte Zeile jedes Suchlaufs, auch nach einem Fehler |
 | `--- Beobachtung läuft ---` / `--- Beobachtung beendet ---` | Beobachtung an / aus |
 | `--- Setzen fertig ---` | Ende jedes Setzens, auch nach einem Fehler |
@@ -782,7 +855,7 @@ dem Suchlauf einen anderen Kanal …`). Neue Zeilen im Suchlauf:
 | `Ziel: Platz <k> "<Titel>" (per Name)` | ein anderer Kanal der Such-Zone (keine Beobachtung) |
 | `Ziel: Deck-Kanal "<Titel>" (RÜCKFALL: "<gesucht>" nicht gefunden)` | nicht gefunden; der Lauf zeigt den Deck-Kanal (bisher Platz 6) |
 
-## 7 Protokollfassung
+## 8 Protokollfassung
 
 | Fassung | Inhalt |
 | --- | --- |
@@ -790,13 +863,16 @@ dem Suchlauf einen anderen Kanal …`). Neue Zeilen im Suchlauf:
 | 2 | dazu Setzen (0x05) und Befehl (0x06) |
 | 3 | dazu der Betrieb: 0x10–0x12, Noten auf Kanal 3, 0x20–0x23 |
 | 4 | dazu die Stimmanzeige: 0x13, 0x24; die Abfrage endet mit 0x24 |
+| 5 | dazu die Kette: 0x14, 0x25 |
 
 Die Fassung steht in der ersten Zeile jedes Suchlaufs. Fürs Deck: Antwortet Nuendo auf
 eine Abfrage gar nicht, läuft dort vermutlich noch eine Fassung vor 3 — Script ausrollen
 und Nuendo neu starten. Fehlt in der Antwort das 0x24 (und kommt auf 0x13 nichts), läuft
-noch Fassung 3: Die Stimmanzeige geht dann nicht, alles andere schon.
+noch Fassung 3: Die Stimmanzeige geht dann nicht, alles andere schon. Kommt auf 0x14 nie ein
+0x25, läuft noch Fassung 4: Die Kette entfällt, das Deck gibt die Sperre fürs zuletzt aktive
+Preset nach 15 s frei.
 
-## 8 Beispielsitzung
+## 9 Beispielsitzung
 
 Ausgangslage: Der Deck-Kanal steht auf „Mono In 6" (die Deck-Suche ist durch, 4.7); Slots „Tuner" (Steinberg), „H-Delay Mono",
 „TONE3000"; TONE3000 auf Preset „Calfinornia", Gain 0.4992, Bass/Mid/Treble 5.00;

@@ -388,15 +388,16 @@ function keyMessage(text: string, fill: string, maxSize: number, weight?: number
 }
 
 /**
- * Tuner-Taste im Tuner-Modus, 144x144. state null = noch keine Messung („Warte…").
- * Außerhalb des Modus bleibt die Taste renderToggleKey("tuner", …). redEdge: roter statt
- * goldener Rahmen (automatische Stummschaltung an).
+ * Tuner-Taste, 144x144. state null = noch keine Messung („Warte…"). Der eigene Tuner
+ * zeigt sie immer; bei der Steinberg-Quelle nur im Modus, außerhalb bleibt es dort bei
+ * renderToggleKey("tuner", …). active: große Anzeige in der Leiste an, heller statt
+ * schlichter Rahmen. redEdge: roter statt goldener Rahmen (automatische Stummschaltung an).
  */
-export function renderTunerKey(state: TunerState | null, status: Status, redEdge = false): string {
+export function renderTunerKey(state: TunerState | null, status: Status, redEdge = false, active = true): string {
 	const live = status.kind === "ok" && state !== null && state.found && !isSilent(state) ? state : null;
 	const cent = live ? clampCent(live.cent) : null;
 	const key =
-		`${statusKey(status)}|${redEdge ? "r" : "g"}|` +
+		`${statusKey(status)}|${redEdge ? "r" : "g"}|${active ? "a" : "i"}|` +
 		(state === null
 			? "-"
 			: `${state.found ? 1 : 0}|` + (live ? `${live.note.trim()}|${live.octave}|${cent}|${live.inTune ? 1 : 0}|${live.held === true ? 1 : 0}` : "s"));
@@ -426,9 +427,9 @@ export function renderTunerKey(state: TunerState | null, status: Status, redEdge
 		lamp = jewelLamp(KEY_CX, KEY_LAMP_Y, KEY_LAMP_R, live.inTune ? "green" : "tuner", true, "kl");
 		body = keyNote(live.note.trim(), live.octave, live.inTune ? IN_TUNE_TEXT : CREAM) + centBar(cent, live.inTune);
 	}
-	// Heller Rahmen = Modus aktiv; ohne Verbindung der schlichte. Rot statt Gold, solange
-	// die automatische Stummschaltung eingeschaltet ist.
-	const bright = status.kind === "ok";
+	// Heller Rahmen = große Anzeige in der Leiste an; sonst und ohne Verbindung der
+	// schlichte. Rot statt Gold, solange die automatische Stummschaltung eingeschaltet ist.
+	const bright = active && status.kind === "ok";
 	const edge = redEdge ? (bright ? "redBright" : "red") : bright ? "bright" : "plain";
 	const foreground = lamp + keyEdge(edge, TUNER_KEY_SIZE) + body;
 	const url = compose(TUNER_KEY_SIZE, TUNER_KEY_SIZE, KEY_BACKGROUND, foreground);

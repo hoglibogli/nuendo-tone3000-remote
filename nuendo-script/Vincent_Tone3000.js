@@ -132,6 +132,16 @@
 //                    (auch bei Modus aus) und unverlangt NUR im Modus: bei Meldungen der
 //                    Tuner-Parameter und wenn sich der Tuner in Slot 1 ändert, mit Dedup.
 //
+// Protokoll 5, Kette (zusätzlich, docs/protokoll.md Abschnitt 6):
+//   Deck -> Nuendo   F0 7D 14 F7                  Kette sicherstellen: Slot 2 H-Delay Mono
+//                    (frisch im Bypass), Slot 3 TONE3000; was schon drinsteckt, bleibt,
+//                    anderes wird ersetzt. Ausgeführt im Leerlauf, ein Slot je Durchgang,
+//                    erst wenn die Deck-Suche steht; nach CHAIN_EXPIRE_MS verfallen. Ein
+//                    neues 0x14 ersetzt einen laufenden Auftrag.
+//   Nuendo -> Deck   F0 7D 25 <Delay> <TONE3000> F7  Ergebnis je Slot, CHAIN_PRESENT ..
+//                    CHAIN_ERROR. Danach melden die Callbacks Slotnamen und Zustände wie
+//                    sonst; das Deck fragt zusätzlich ab.
+//
 // Protokollfassung: Die erste Zeile jedes Suchlaufs nennt "Protokoll <n>". Das
 // Werkzeug verlangt sie, bevor es Setzen oder Befehle schickt — eine ältere,
 // noch ausgerollte Fassung verwirft 0x05 und 0x06 sonst still.
@@ -213,10 +223,11 @@ var MAX_LINE_BYTES = 100
 
 // 1 = Ping, Suchlauf, Beobachtung; 2 = dazu Setzen (0x05) und Befehl (0x06);
 // 3 = dazu der Betrieb fürs Stream Deck (0x10..0x12 herein, 0x20..0x23 hinaus,
-// Noten auf MIDI-Kanal 3); 4 = dazu die Stimmanzeige (0x13 herein, 0x24 hinaus).
+// Noten auf MIDI-Kanal 3); 4 = dazu die Stimmanzeige (0x13 herein, 0x24 hinaus);
+// 5 = dazu die Kette (0x14 herein, 0x25 hinaus).
 // tools/suchlauf.cjs prüft diese Zahl in der ersten Zeile des Suchlaufs
 // (mindestens 2).
-var PROTOCOL_VERSION = 4
+var PROTOCOL_VERSION = 5
 
 var MANUFACTURER_ID = 0x7D // non-commercial / educational SysEx ID
 var MSG_PING      = 0x01
@@ -240,6 +251,10 @@ var MSG_SLOT_NAME    = 0x23
 var MSG_TUNER_MODE   = 0x13
 // Protokoll 4, Nuendo -> Deck
 var MSG_TUNER        = 0x24
+// Protokoll 5, Deck -> Nuendo
+var MSG_CHAIN        = 0x14
+// Protokoll 5, Nuendo -> Deck
+var MSG_CHAIN_RESULT = 0x25
 
 // TONE3000-Parameter auf den Reglern des Decks, p = Index. Aufgelöst wird immer
 // über den exakten Titel; der Tag ist nur die Erwartung aus dem Suchlauf
@@ -260,6 +275,33 @@ var SLOT_TUNER = 0
 var SLOT_DELAY = 1
 var SLOT_T3K = 2
 var DECK_SLOTS = 3
+
+// Kette des Decks (Protokoll 5, Wunsch des Users 2026-10-08): Verlässt das Deck den
+// Tuner-Modus, schickt es 0x14, und das Script sorgt dafür, dass in Slot 2 das Delay
+// und in Slot 3 TONE3000 stecken. Steckt schon das Richtige drin (Titel enthält
+// match), bleibt es unberührt; sonst wird das Plugin aus Nuendos Plugin-Liste geladen
+// (exakter Name, Hersteller als Teilstring) und ersetzt, was im Slot steckt — ohne
+// Rückfrage. Ein frisches Delay kommt im Bypass. Belegt am Gerät für den Weg selbst:
+// FaderBank E-34 (trySetSlotPlugin am Objekt "Slot n", synchron, öffnet kein Fenster).
+var CHAIN = [
+    { slot: SLOT_DELAY, label: 'Delay', match: 'h-delay', name: 'H-Delay Mono', vendor: 'waves', bypass: 1 },
+    { slot: SLOT_T3K, label: 'TONE3000', match: T3K_MATCH, name: 'TONE3000', vendor: 'tone3000', bypass: 0 }
+]
+// Ergebnis je Slot in 0x25
+var CHAIN_PRESENT = 0     // steckte schon drin
+var CHAIN_LOADED = 1      // geladen, Bypass wie verlangt
+var CHAIN_NOT_LISTED = 2  // nicht in Nuendos Plugin-Liste
+var CHAIN_REFUSED = 3     // trySetSlotPlugin lieferte false
+var CHAIN_NO_SLOT = 4     // kein Objekt "Inserts" oder Slot fehlt
+var CHAIN_MISMATCH = 5    // geladen, aber Bypass nicht übernommen
+var CHAIN_NO_CHANNEL = 6  // Deck-Kanal heißt nicht TARGET_TITLE (oder Auftrag verfallen)
+var CHAIN_ERROR = 7       // Ausnahme des Hosts
+var CHAIN_CODE_TEXT = ['war da', 'geladen', 'nicht in der Plugin-Liste', 'Laden abgelehnt',
+    'Slot fehlt', 'geladen, Bypass nicht uebernommen', 'Kanal fehlt', 'Fehler']
+// Wartet die Deck-Suche länger, verfällt der Auftrag (Antwort CHAIN_NO_CHANNEL).
+var CHAIN_EXPIRE_MS = 10000
+var PLUGIN_UID_PATTERN = /^[0-9A-Fa-f]{32}$/
+
 // MIDI-Kanal 3. Kanal 1 tragen die Mute-Tasten der Such-Zone, Kanal 2 die
 // Preset-Befehle des Suchlaufs.
 var DECK_CHANNEL = 2
@@ -2313,6 +2355,113 @@ function refreshTuner(activeDevice) {
 }
 
 //------------------------------------------------------------------------------
+// Kette (Protokoll 5)
+//------------------------------------------------------------------------------
+// 0x14 merkt nur den Auftrag; ausgeführt wird im Leerlauf (page.mOnIdle) mit dessen
+// frischem activeMapping, ein Slot je Durchgang — wie "Plugins laden" der FaderBank
+// (E-35): Der SysEx-Callback liefert kein Mapping, und ein Ladevorgang hält Nuendo
+// rund 60 ms fest. Erst wenn die Deck-Suche steht; wartet sie länger als
+// CHAIN_EXPIRE_MS, verfällt der Auftrag, statt später überraschend zu laden.
+//
+// chainJob: null oder { since, next, codes }; since setzt der erste Durchgang (im
+// SysEx-Callback gibt es keine Uhr des Leerlaufs).
+var chainJob = null
+// UID je Plugin-Name aus Nuendos Plugin-Liste, einmal je Sitzung gelesen.
+var chainUids = {}
+
+function runChain(activeDevice) {
+    if (chainJob) line(activeDevice, 'KETTE: neuer Auftrag ersetzt den laufenden')
+    chainJob = { since: null, next: 0, codes: [] }
+}
+
+/** UID eines Plugins der Kette aus der aktiven, sonst der Standard-Sammlung; '' = nicht gelistet. */
+function chainUid(mapping, access, slotID, step) {
+    if (chainUids[step.name]) return chainUids[step.name]
+    var manager = access.mPluginManager
+    var indices = [manager.getIndexOfActivePluginCollection(mapping, slotID),
+        manager.getIndexOfDefaultPluginCollection(mapping, slotID)]
+    for (var c = 0; c < indices.length; c++) {
+        if (!(indices[c] >= 0)) continue
+        var collection = manager.getPluginCollectionByIndex(mapping, slotID, indices[c])
+        if (!collection || !collection.mEntries) continue
+        for (var e = 0; e < collection.mEntries.length; e++) {
+            var entry = collection.mEntries[e]
+            var uid = hostText(entry.mPluginUID)
+            if (hostText(entry.mPluginName) !== step.name || !PLUGIN_UID_PATTERN.test(uid)) continue
+            if (hostText(entry.mPluginVendor).toLowerCase().indexOf(step.vendor) < 0) continue
+            chainUids[step.name] = uid
+            return uid
+        }
+    }
+    return ''
+}
+
+/** Einen Slot der Kette prüfen und bei Bedarf laden; liefert seinen Code. */
+function chainApply(mapping, step) {
+    var access = deckAccess
+    var insertsID = findChildByType(mapping, access, access.getBaseObjectID(mapping), 'Inserts')
+    if (insertsID < 0 || access.getNumberOfChildObjects(mapping, insertsID) <= step.slot) return CHAIN_NO_SLOT
+    var slotID = access.getChildObjectID(mapping, insertsID, step.slot)
+    if (access.getNumberOfChildObjects(mapping, slotID) > 0) {
+        var pluginID = access.getChildObjectID(mapping, slotID, 0)
+        if (hostText(access.getObjectTitle(mapping, pluginID)).toLowerCase().indexOf(step.match) >= 0) return CHAIN_PRESENT
+    }
+    var uid = chainUid(mapping, access, slotID, step)
+    if (!uid) return CHAIN_NOT_LISTED
+    // dontAskDiscard: einen belegten Slot ohne modalen Dialog ersetzen (so gewünscht).
+    if (!access.mPluginManager.trySetSlotPlugin(mapping, slotID, uid, true)) return CHAIN_REFUSED
+    // Das gemerkte TONE3000 gehört zum alten Objekt: beim nächsten Bedarf neu auflösen.
+    if (step.slot === SLOT_T3K) t3k = null
+    // Nuendo öffnet beim Laden über die API kein Fenster (FaderBank E-34); Edit = 0 sichert nur.
+    var edit = findParamByTitle(mapping, access, slotID, 'Edit')
+    if (edit.found) access.setParameterProcessValue(mapping, slotID, edit.tag, 0)
+    var bypass = findParamByTitle(mapping, access, slotID, 'Bypass')
+    if (!bypass.found) return CHAIN_MISMATCH
+    access.setParameterProcessValue(mapping, slotID, bypass.tag, step.bypass)
+    var now = access.getParameterProcessValue(mapping, slotID, bypass.tag) >= 0.5 ? 1 : 0
+    return now === step.bypass ? CHAIN_LOADED : CHAIN_MISMATCH
+}
+
+/** Ein Durchgang: der nächste Slot, oder alle restlichen mit code (verfallen, kein Kanal). */
+function chainPass(activeDevice, mapping, now) {
+    var job = chainJob
+    if (job.since === null) job.since = now
+    if (!targetOk()) {
+        chainFinish(activeDevice, CHAIN_NO_CHANNEL)
+        return
+    }
+    var step = CHAIN[job.next]
+    var code
+    try {
+        code = chainApply(mapping, step)
+    } catch (e) {
+        code = CHAIN_ERROR
+        console.log('Kette ' + step.label + ' Fehler: ' + e)
+    }
+    job.codes.push(code)
+    job.next++
+    if (job.next >= CHAIN.length) chainFinish(activeDevice, CHAIN_ERROR)
+}
+
+/** Auftrag beenden: fehlende Codes mit rest füllen, 0x25 und eine Debugzeile senden. */
+function chainFinish(activeDevice, rest) {
+    var job = chainJob
+    chainJob = null
+    while (job.codes.length < CHAIN.length) job.codes.push(rest)
+    var parts = []
+    for (var i = 0; i < CHAIN.length; i++) parts.push(CHAIN[i].label + ' ' + CHAIN_CODE_TEXT[job.codes[i]])
+    line(activeDevice, 'KETTE: ' + parts.join(', '))
+    sendFrame(activeDevice, MSG_CHAIN_RESULT, job.codes)
+}
+
+/** Wartet ein Auftrag zu lange auf die Deck-Suche: verfallen lassen. */
+function chainExpired(activeDevice, now) {
+    if (!chainJob) return
+    if (chainJob.since === null) chainJob.since = now
+    if (now - chainJob.since > CHAIN_EXPIRE_MS) chainFinish(activeDevice, CHAIN_NO_CHANNEL)
+}
+
+//------------------------------------------------------------------------------
 // Deck-Suche
 //------------------------------------------------------------------------------
 // Schiebt die Deck-Zone auf den Platz von TARGET_TITLE, wie die FaderBank ihre Bank
@@ -2636,11 +2785,22 @@ function seekPass(activeDevice, mapping) {
  * statt in jedem Durchgang neu zu werfen.
  */
 page.mOnIdle = function (activeDevice, activeMapping) {
-    if (!currentMapping || (seekPhase === SEEK_IDLE && !seekReason)) return
+    var seeking = seekReason || seekPhase !== SEEK_IDLE
+    if (!currentMapping || (!seeking && !chainJob)) return
     var now = performance.now()
     if (now - lastSeekPass < SEEK_PASS_MS) return
     lastSeekPass = now
     var mapping = activeMapping || currentMapping
+    // Die Kette erst, wenn der Deck-Kanal steht; solange gesucht wird, läuft nur ihre Frist.
+    if (!seeking) {
+        guarded(activeDevice, 'Kette', function () {
+            chainPass(activeDevice, mapping, now)
+        })
+        return
+    }
+    guarded(activeDevice, 'Kette', function () {
+        chainExpired(activeDevice, now)
+    })
     var failed = true
     guarded(activeDevice, 'Deck-Suche', function () {
         seekPass(activeDevice, mapping)
@@ -2795,6 +2955,16 @@ midiInput.mOnSysex = function (activeDevice, message) {
             runTunerMode(activeDevice, message)
         } catch (e) {
             line(activeDevice, 'TUNER Fehler: ' + e)
+        }
+        return
+    }
+
+    // Protokoll 5: Kette
+    if (message[2] === MSG_CHAIN) {
+        try {
+            runChain(activeDevice)
+        } catch (e) {
+            line(activeDevice, 'KETTE Fehler: ' + e)
         }
     }
 }

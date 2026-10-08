@@ -27,7 +27,7 @@ const N = {
 	/** 0x24 (Protokoll 4): flags, cent+64, oct+64, Note. */
 	tuner: (flags, cent, oct, note) => [0xf0, 0x7d, 0x24, flags, cent + 64, oct + 64, ...P.encodeText(note), 0xf7],
 };
-/** Antwort auf eine Abfrage wie in protokoll.md 7. */
+/** Antwort auf eine Abfrage wie in protokoll.md 9 (Beispielsitzung). */
 const ANSWER = [
 	N.param(0, 8178, "0.4992"),
 	N.param(1, 8192, "5.00"),
@@ -458,12 +458,12 @@ module.exports = function run() {
 		check("Anzeige sofort im Modus (vor dem 0x24)", [e.s.tunerActive(), key()[0]], [true, true]);
 		e.feed([N.tuner(0x0c, 0, 0, "--")]); // Antwort: Modus an, Tuner gefunden, Stille
 		check("0x24 bestätigt: Modus an", [e.s.tunerActive(), e.s.tuner().status.kind], [true, "ok"]);
-		check("zweiter Druck: 0x13 00", press(false), ["F0 7D 13 00 F7"]);
+		check("zweiter Druck: 0x13 00, dazu die Kette (0x14)", press(false), ["F0 7D 13 00 F7", "F0 7D 14 F7"]);
 		check("Anzeige sofort aus", e.s.tunerActive(), false);
 		e.feed([N.tuner(0x08, 0, 0, "--")]);
 		check("mit openWindow an: 0x13 01, dann Note 1 Vel 127", press(true), ["F0 7D 13 01 F7", "92 01 7F"]);
 		e.feed([N.tuner(0x0c, 0, 0, "--")]);
-		check("mit openWindow aus: 0x13 00, dann Note 1 Vel 0", press(true), ["F0 7D 13 00 F7", "92 01 00"]);
+		check("mit openWindow aus: 0x13 00, dann Note 1 Vel 0, dann die Kette", press(true), ["F0 7D 13 00 F7", "92 01 00", "F0 7D 14 F7"]);
 		e.feed([N.tuner(0x08, 0, 0, "--")]);
 		ok("kein einziges Mal Note 0 (Kanal-Mute)", !e.sent.some((b) => b[0] === 0x92 && b[1] === 0), e.sent.filter((b) => b[0] === 0x92).map(hex).join(" "));
 
@@ -549,9 +549,9 @@ module.exports = function run() {
 		e.feed([N.tuner(0x1c, 0, 0, "--")]);
 		i = e.sent.length;
 		e.s.pressTuner(false);
-		check("Taste aus: 0x13 00, vor der Antwort kein Hinweis (die alte Messung war im Modus)", [e.since(i).map(hex), key()], [[mode(false)], [false, "ok"]]);
+		check("Taste aus: 0x13 00, vor der Antwort kein Hinweis (die alte Messung war im Modus)", [e.since(i).map(hex), key()], [[mode(false), "F0 7D 14 F7"], [false, "ok"]]);
 		e.feed([N.tuner(0x18, 0, 0, "--"), N.tuner(0x18, 0, 0, "--")]);
-		check("Mute blieb an: genau ein zweites 0x13 00, dann „stumm“", [e.since(i).map(hex), key()], [[mode(false), mode(false)], [false, "stumm"]]);
+		check("Mute blieb an: genau ein zweites 0x13 00, dann „stumm“", [e.since(i).map(hex), key()], [[mode(false), "F0 7D 14 F7", mode(false)], [false, "stumm"]]);
 
 		// Ohne Verbindung zählt kein 0x24; nach dem Pong gilt der Zustand neu.
 		e.alive = false;

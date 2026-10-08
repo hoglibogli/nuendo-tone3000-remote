@@ -1,4 +1,4 @@
-import { buildPing, buildQuery, buildTunerMode, parseFrame } from "../midi/protocol";
+import { buildPing, buildQuery, buildTunerMode, CHAIN_CODE_TEXT, type ChainFrame, MSG_CHAIN, parseFrame } from "../midi/protocol";
 import { DEFAULT_INPUT, type InputChoice } from "../tuner/inputs";
 import { DEFAULT_A4 } from "../tuner/notes";
 import type { OwnTunerConfig, OwnTunerEvent, OwnTunerPort, OwnTunerStatus } from "../tuner/source";
@@ -26,9 +26,15 @@ import { Status, Store, ToggleKind, TunerReading, TunerSourceKind } from "./stor
  *                    bit3 = 1, bit4 = 1), einmal 0x13 00 — bei bestehender Verbindung,
  *                    wo das 0x13 des Verbindungsaufbaus nicht hilft (protokoll.md 5.5).
  *                    Mit dem eigenen Tuner soll Steinbergs Modus und Mute immer aus sein.
- *   Eigener Tuner    Im Tuner-Modus mit der Quelle „own" läuft der Audio-Kindprozess
- *                    (ownTuner, tuner/source.ts), sonst nicht; seine Messungen und
- *                    Fehler landen im Store. Die Kanal-Mute (Note 0) regelt der Store; den
+ *   Kette            Verlässt die Tuner-Taste den Modus, geht 0x14 hinaus (Store.pressTuner);
+ *                    kommt 0x25 mit frisch geladenem TONE3000, holt 0x12 das zuletzt aktive
+ *                    Preset zurück. Das zuletzt aktive Preset meldet onLastPreset, damit das
+ *                    Plugin es in den globalen Einstellungen festhält; onChainResult
+ *                    bekommt jedes 0x25 (Tuner-Taste: Häkchen oder Warndreieck).
+ *   Eigener Tuner    Mit der Quelle „own" läuft der Audio-Kindprozess (ownTuner,
+ *                    tuner/source.ts), solange eine Tuner-Taste auf dem Deck liegt — sie
+ *                    zeigt die Stimmanzeige immer (Wunsch des Users 2026-10-07) — oder der
+ *                    Modus an ist; sonst nicht. Seine Messungen und Fehler landen im Store. Die Kanal-Mute (Note 0) regelt der Store; den
  *                    Merker „Taste hat gemutet" meldet onChannelMuteMarker, damit das
  *                    Plugin ihn in den globalen Einstellungen festhält.
  *
@@ -54,6 +60,8 @@ export interface SessionOptions {
 	ownTuner?: OwnTunerPort;
 	/** Merker der Kanal-Mute hat sich geändert (festhalten, überlebt den Neustart). */
 	onChannelMuteMarker?: (on: boolean) => void;
+	/** Zuletzt aktives Preset hat sich geändert (festhalten, Kette). */
+	onLastPreset?: (name: string) => void;
 }
 
 /** Was die Tuner-Taste einstellt (Property Inspector). */
@@ -82,7 +90,7 @@ export interface TunerView {
 	reading: TunerReading | OwnTunerState | null;
 	/** Für die Leiste (etwa „Eingang MADI 6 fehlt"). */
 	status: Status;
-	/** Für die Taste im Modus (etwa „Eingang?"). */
+	/** Für die Taste (etwa „Eingang?"); beim eigenen Tuner immer, bei Steinberg im Modus. */
 	keyStatus: Status;
 }
 
@@ -103,8 +111,12 @@ export class Session {
 	private readonly listeners = new Set<() => void>();
 	private readonly ownTuner: OwnTunerPort | undefined;
 	private readonly onMarker: (on: boolean) => void;
+	private readonly onLastPreset: (name: string) => void;
+	private lastPresetSeen: string | null = null;
+	private readonly chainListeners = new Set<(result: ChainFrame) => void>();
 	private ownConfig: OwnTunerConfig = { ...DEFAULT_INPUT, a4: DEFAULT_A4 };
 	private ownRunning = false;
+	private tunerKeyVisible = false;
 	private markerSeen = false;
 
 	constructor(options: SessionOptions) {
@@ -115,6 +127,7 @@ export class Session {
 		this.defer = options.defer ?? ((fn) => void setImmediate(fn));
 		this.ownTuner = options.ownTuner;
 		this.onMarker = options.onChannelMuteMarker ?? (() => undefined);
+		this.onLastPreset = options.onLastPreset ?? (() => undefined);
 		this.ownTuner?.listen((ev) => this.onOwnTuner(ev));
 	}
 
@@ -122,6 +135,19 @@ export class Session {
 	onChange(fn: () => void): () => void {
 		this.listeners.add(fn);
 		return () => this.listeners.delete(fn);
+	}
+
+	/** Ergebnis jeder Kette (0x25). */
+	onChainResult(fn: (result: ChainFrame) => void): () => void {
+		this.chainListeners.add(fn);
+		return () => this.chainListeners.delete(fn);
+	}
+
+	/** Zuletzt aktives Preset aus den globalen Einstellungen (Plugin-Start). */
+	restoreLastPreset(name: string | null): void {
+		if (name === null || name === "" || this.store.lastPreset !== null) return;
+		this.store.lastPreset = name;
+		this.lastPresetSeen = name;
 	}
 
 	/** Takt starten: Ping sofort, danach alle TICK_MS urteilen. */
@@ -185,6 +211,8 @@ export class Session {
 					this.sendBytes(buildTunerMode(false));
 				}
 				if (result.send) this.sendNotes(result.send, "nachgeholt");
+				if (result.chain) this.afterChain(result.chain, result.selectPreset);
+				this.checkLastPreset();
 				if (result.queryNow) this.requestQuery();
 			}
 		}
@@ -220,12 +248,14 @@ export class Session {
 	/**
 	 * Tuner-Taste: Modus umschalten (0x13), mit openWindow dazu das Tuner-Fenster
 	 * (Note 1). Die Anzeige wechselt sofort; das 0x24 der Antwort bestätigt den Modus.
+	 * Beim Verlassen geht dazu 0x14 hinaus (Kette, Store.pressTuner).
 	 */
 	pressTuner(openWindow: boolean): boolean {
 		const own = this.store.tunerSource === "own";
-		const messages = this.store.pressTuner(openWindow && !own);
+		const messages = this.store.pressTuner(openWindow && !own, this.now());
 		if (!messages) return false;
 		this.log(`Tuner-Modus ${this.store.tunerMode ? "an" : "aus"} (${own ? "eigener Tuner" : "Steinberg-Tuner"})${openWindow && !own ? " (mit Fenster)" : ""}`);
+		if (messages.some((b) => b[0] === 0xf0 && b[2] === MSG_CHAIN)) this.log("Kette: Delay in Slot 2 und TONE3000 in Slot 3 prüfen (0x14)");
 		for (const bytes of messages) this.sendBytes(bytes);
 		this.afterTunerChange();
 		return true;
@@ -247,6 +277,16 @@ export class Session {
 	}
 
 	/**
+	 * Liegt eine Tuner-Taste auf dem Deck (Erscheinen/Verschwinden)? Mit der Quelle „own"
+	 * misst der Tuner dann auch außerhalb des Modus, damit die Taste immer stimmt.
+	 */
+	setTunerKeyVisible(visible: boolean): void {
+		if (this.tunerKeyVisible === visible) return;
+		this.tunerKeyVisible = visible;
+		this.syncOwnTuner();
+	}
+
+	/**
 	 * Merker der Kanal-Mute aus den globalen Einstellungen (Plugin-Start): Steht er und
 	 * ist Input 6 noch stumm, hebt das nächste 0x22 die Mute einmal auf.
 	 */
@@ -265,6 +305,30 @@ export class Session {
 		this.checkMarker();
 	}
 
+	/** 0x25: protokollieren, Preset zurückholen, Tuner-Taste benachrichtigen. */
+	private afterChain(result: ChainFrame, selectPreset: number[] | undefined): void {
+		this.log(`Kette: Delay ${CHAIN_CODE_TEXT[result.delay]}, TONE3000 ${CHAIN_CODE_TEXT[result.amp]}`);
+		if (selectPreset) {
+			this.log("Kette: zuletzt aktives Preset zurückholen");
+			this.sendBytes(selectPreset);
+		}
+		for (const fn of this.chainListeners) {
+			try {
+				fn(result);
+			} catch (e) {
+				this.log(`Kette melden fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`);
+			}
+		}
+	}
+
+	/** Zuletzt aktives Preset geändert? Dann dem Plugin melden (globale Einstellungen). */
+	private checkLastPreset(): void {
+		const name = this.store.lastPreset;
+		if (name === null || name === this.lastPresetSeen) return;
+		this.lastPresetSeen = name;
+		this.onLastPreset(name);
+	}
+
 	/** Merker geändert? Dann dem Plugin melden (globale Einstellungen). */
 	private checkMarker(): void {
 		const on = this.store.channelMuted;
@@ -280,10 +344,15 @@ export class Session {
 		if (changed) this.changed();
 	}
 
-	/** Eigener Tuner läuft genau im Modus mit der Quelle „own". */
+	/**
+	 * Eigener Tuner läuft mit der Quelle „own", solange eine Tuner-Taste da ist oder der
+	 * Modus an ist. Ein Druck wechselt nur den Modus; der laufende Tuner misst weiter.
+	 */
 	private syncOwnTuner(): void {
-		const want = this.store.tunerMode && this.store.tunerSource === "own";
+		const want = this.store.tunerSource === "own" && (this.tunerKeyVisible || this.store.tunerMode);
 		if (want) {
+			// Frisch gestartet: alte Messung weg, „Warte…" bis zur ersten Meldung.
+			if (!this.ownRunning && this.store.resetOwn()) this.changed();
 			this.ownTuner?.start(this.ownConfig); // gleicher Auftrag: bleibt, anderer: Neustart
 			this.ownRunning = true;
 		} else if (this.ownRunning) {
